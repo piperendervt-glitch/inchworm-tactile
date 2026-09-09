@@ -128,7 +128,7 @@ class LayoutEditor:
     def draw_preview(self,layout,spawn,objects):
         c=self.preview_canvas;c.delete('all')
         xmin,xmax,ymin,ymax=layout['bounds']
-        angle=math.radians(spawn['heading_deg']);hx=spawn['x']+.183*math.cos(angle);hy=spawn['y']+.183*math.sin(angle)
+        angle=math.radians(spawn['heading_deg']);hx=spawn['x']+.27*math.cos(angle);hy=spawn['y']+.27*math.sin(angle)
         xmin=min([xmin,spawn['x'],hx]+[o['x']-o['radius'] for o in objects]);xmax=max([xmax,spawn['x'],hx]+[o['x']+o['radius'] for o in objects])
         ymin=min([ymin,spawn['y'],hy]+[o['y']-o['radius'] for o in objects]);ymax=max([ymax,spawn['y'],hy]+[o['y']+o['radius'] for o in objects])
         scale=310/max(xmax-xmin,ymax-ymin)

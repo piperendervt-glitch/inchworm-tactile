@@ -40,7 +40,7 @@ class LayoutTests(unittest.TestCase):
         cfg=read_config();cfg['layout']=self.layout;w=World(cfg)
         self.assertEqual(w.objects,[])
         self.assertAlmostEqual(w.nodes[-1][0],1.2)
-        self.assertAlmostEqual(w.nodes[-1][1],-.15)
+        self.assertAlmostEqual(w.nodes[-1][1],-.03)
         self.assertEqual(w.x,1.2)
 
     def test_random_counts_ranges(self):

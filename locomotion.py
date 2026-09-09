@@ -2,7 +2,7 @@
 import math
 from panda3d.core import Vec3, Point3, NodePath, TransformState, Quat
 from panda3d.bullet import (BulletWorld, BulletRigidBodyNode, BulletBoxShape,
-    BulletSphereShape, BulletPlaneShape, BulletCylinderShape, BulletGenericConstraint)
+    BulletCapsuleShape, XUp, BulletSphereShape, BulletPlaneShape, BulletCylinderShape, BulletGenericConstraint)
 
 
 class RigidMechanics:
@@ -28,24 +28,20 @@ class RigidMechanics:
         spawn=spawn or dict(x=0.,y=0.,heading_deg=0.)
         q=Quat();q.setFromAxisAngle(spawn['heading_deg'],Vec3(0,0,1))
         origin=Vec3(spawn['x'],spawn['y'],0)
-        def pos(x,y,z):return origin+q.xform(Vec3(x-.06,y,z))
-        mass=self.settings['mass_kg']
-        bodyshape=BulletBoxShape(Vec3(.075,.025,.018));bodyshape.setMargin(.001)
-        self.body=self.make('body',mass*.7,bodyshape,pos(.135,0,.09),q)
-        # Fixed head is a second collision shape belonging to the torso.
-        self.body.node().addShape(BulletSphereShape(.018),TransformState.makePos(Vec3(.09,0,0)))
-        self.legs=[];self.joints=[]
-        for i,x in enumerate((.06,.21)):
-            shape=BulletBoxShape(Vec3(.011,.012,.033));shape.setMargin(.001)
-            leg=self.make(('rear','front')[i],mass*.15,shape,pos(x,0,.057),q)
-            footshape=BulletBoxShape(Vec3(.022,.035,.019));footshape.setMargin(.001)
-            leg.node().addShape(footshape,TransformState.makePos(Vec3(0,0,-.038)))
-            self.legs.append(leg)
-            joint=BulletGenericConstraint(self.body.node(),leg.node(),
-                TransformState.makePos(Vec3(x-.135,0,0)),TransformState.makePos(Vec3(0,0,.033)),True)
+        def pos(x,y,z):return origin+q.xform(Vec3(x,y,z))
+        self.segments=[];self.joints=[]
+        for i in range(3):
+            shape=BulletCapsuleShape(.018,.054,XUp)
+            self.segments.append(self.make(('tail','middle','head')[i],self.settings['mass_kg']/3,
+                shape,pos(.045+i*.09,0,.019),q))
+        self.body=self.segments[1]
+        self.supports=[self.segments[0],self.segments[2]]
+        for i in range(2):
+            joint=BulletGenericConstraint(self.segments[i].node(),self.segments[i+1].node(),
+                TransformState.makePos(Vec3(.045,0,0)),TransformState.makePos(Vec3(-.045,0,0)),True)
             for axis in range(3):
                 joint.setLinearLimit(axis,0,0)
-                joint.setAngularLimit(axis,-52,52)  # Panda wrapper takes degrees here.
+                joint.setAngularLimit(axis,-52,52)
                 motor=joint.getRotationalLimitMotor(axis)
                 motor.setMotorEnabled(True);motor.setMaxMotorForce(self.settings['joint_torque_nm'])
             self.world.attachConstraint(joint,True);self.joints.append(joint)
@@ -65,9 +61,9 @@ class RigidMechanics:
         return path
 
     def point(self,path,xyz):return tuple(path.getPos()+path.getQuat().xform(Vec3(*xyz)))
-    def feet(self):return [self.point(p,(0,0,-.038)) for p in self.legs]
+    def feet(self):return [self.point(p,(0,0,-.018)) for p in self.supports]
     def center(self):return tuple(self.body.getPos())
-    def head_position(self):return self.point(self.body,(.09,0,0))
+    def head_position(self):return self.point(self.segments[2],(.045,0,0))
     def heading(self):
         v=self.body.getQuat().xform(Vec3(1,0,0));return math.atan2(v.y,v.x)
     def orientation(self):
@@ -75,15 +71,10 @@ class RigidMechanics:
         return (-math.atan2(v.z,math.hypot(v.x,v.y)),self.heading(),math.radians(self.body.getR()))
     def angles(self):return [j.getAngle(a) for j in self.joints for a in range(3)]
     def geometry(self):
-        rear,front=self.feet()
-        return [rear]+[self.point(self.body,(x,0,0)) for x in (-.075,-.0375,0,.0375,.075)]+[front]
+        return [self.point(self.segments[0],(-.045,0,0))]+[self.point(p,(.045,0,0)) for p in self.segments]
     def surface_points(self):
-        # Five skin patches: rear foot, three torso patches, front foot.
-        out=[]
-        for p,x,z in [(self.legs[0],0,-.057)]+[(self.body,x,-.018) for x in (-.045,0,.045)]+[(self.legs[1],0,-.057)]:
-            for row in range(3):
-                for col in range(3):out.append(self.point(p,(x+(row-1)*.015,(col-1)*.015,z)))
-        return out
+        return [self.point(p,((row-1)*.015,(col-1)*.012,-math.sqrt(.018**2-((col-1)*.012)**2)))
+            for p in self.segments for row in range(3) for col in range(3)]
 
     def contacts(self,leg):
         return [c for ground in self.static for c in self.world.contactTestPair(leg.node(),ground.node()).getContacts()
@@ -100,7 +91,7 @@ class RigidMechanics:
                     error=targets[i*3+axis]-joint.getAngle(axis)
                     rate=self.settings['joint_rate_rad_s']
                     joint.getRotationalLimitMotor(axis).setTargetVelocity(max(-rate,min(rate,error*12)))
-            for i,leg in enumerate(self.legs):
+            for i,leg in enumerate(self.supports):
                 contacts=self.contacts(leg);g=grips[i]
                 leg.node().setFriction(self.settings['mu_released']+(self.settings['mu_gripped']-self.settings['mu_released'])*g)
                 if g<.1:self.anchors[i]=None
@@ -124,7 +115,7 @@ class RigidMechanics:
                         leg.node().applyForce(force,r)
                 self.forces[i]+=force.length()/substeps
             self.world.doPhysics(h,0)
-            for i,leg in enumerate(self.legs):
+            for i,leg in enumerate(self.supports):
                 # Solver impulse / dt gives average normal contact load.
                 self.loads[i]+=sum(max(0.,p.getAppliedImpulse()) for m in self.world.getManifolds()
                     if (m.getNode0()==leg.node() and any(m.getNode1()==g.node() for g in self.static))
@@ -133,7 +124,7 @@ class RigidMechanics:
         after=self.feet()
         self.slip=[math.hypot(b[0]-a[0],b[1]-a[1]) for a,b in zip(before,after)]
         self.slip_total=[a+b for a,b in zip(self.slip_total,self.slip)]
-        self.states=['grip' if self.anchors[i] is not None else ('contact' if self.contacts(p) else 'air') for i,p in enumerate(self.legs)]
+        self.states=['grip' if self.anchors[i] is not None else ('contact' if self.contacts(p) else 'air') for i,p in enumerate(self.supports)]
         self.capacity=[self.settings['grip_force_n']*g for g in grips]
-        self.obstacle_contact=any(self.world.contactTestPair(p.node(),o.node()).getNumContacts()>0 for p in [self.body]+self.legs for o in self.obstacles)
+        self.obstacle_contact=any(self.world.contactTestPair(p.node(),o.node()).getNumContacts()>0 for p in [self.body]+self.supports for o in self.obstacles)
         self.reason='obstacle contact' if self.obstacle_contact else 'rigid contact'

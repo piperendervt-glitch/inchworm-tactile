@@ -18,7 +18,7 @@ def observe(config,seconds=30,csv_path=None):
     finally:
         if recorder:recorder.close()
     center=world.mechanics.center()
-    return dict(controller_version=4,training_enabled=False,training_steps=world.controller.training_steps,
+    return dict(controller_version=5,training_enabled=False,training_steps=world.controller.training_steps,
         requested_seconds=seconds,elapsed_seconds=world.tick*DT,controller_seed=world.controller.seed,
         weights_sha256=world.controller.fingerprint,weights_unchanged=before==world.controller.weights,
         initial_spawn=world.initial_spawn,objects=world.objects,displacement_m=[center[i]-world.initial_center[i] for i in range(3)],

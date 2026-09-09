@@ -98,7 +98,7 @@ class Renderer3D:
         self.grid=self.root.attachNewNode(lines.create());self.grid.setLightOff();self.grid.setShaderOff()
         self.links=[];self.joints=[];self.pads=[];self.loads=[]
         for i in range(6):
-            segment=self.box.copyTo(self.root);segment.setColor(.16,.70,.58,1)
+            segment=self.cylinder.copyTo(self.root);segment.setColor(.16,.70,.58,1)
             self.links.append(segment)
         for i in range(7):
             joint=self.sphere.copyTo(self.root);joint.setColor(.73,.90,.86,1);joint.setScale(.009)
@@ -145,21 +145,25 @@ class Renderer3D:
         self.update_objects(world.objects)
         nodes=world.nodes
         m=world.mechanics
-        for i,(part,size) in enumerate(zip([m.body]+m.legs,[(.075,.025,.018),(.011,.012,.033),(.011,.012,.033)])):
-            self.links[i].setPos(part.getPos());self.links[i].setQuat(part.getQuat());self.links[i].setScale(*size)
+        # Three capsule bodies: a cylinder and two hemispherical ends each.
+        from panda3d.core import Quat
+        along_x=Quat();along_x.setFromAxisAngle(90,Vec3(0,1,0))
+        for i,part in enumerate(m.segments):
+            segment=self.links[i]
+            segment.setPos(*m.point(part,(-.027,0,0)))
+            segment.setQuat(along_x*part.getQuat());segment.setScale(.018,.018,.054)
+            color=(.95,.72,.29,1) if i==2 else (.16,.70,.58,1)
+            segment.setColor(*color)
+            for j,x in enumerate((-.027,.027)):
+                cap=self.joints[2*i+j];cap.setPos(*m.point(part,(x,0,0)));cap.setScale(.018);cap.setColor(*color)
         for link in self.links[3:]:link.hide()
-        for i,node in enumerate(self.joints):
-            if i<2:node.setPos(*nodes[1 if i==0 else 5])
-            else:node.hide()
+        self.joints[6].hide();self.head.hide()
         for i,point in enumerate(m.feet()):
-            self.pads[i].setPos(*point);self.pads[i].setQuat(m.legs[i].getQuat())
-            self.pads[i].setColor(*{'grip':(.20,.90,.66,1),'contact':(1,.57,.16,1),'air':(.45,.48,.55,1)}[m.states[i]])
-            self.loads[i].setPos(point[0],point[1],point[2]+.02)
+            self.pads[i].hide()  # No legs, feet, or standing platform.
+            self.loads[i].setPos(point[0],point[1],point[2]+.04)
             self.loads[i].setScale(.0018,.0018,max(.00001,m.loads[i]*.05))
-        head=m.head_position()
-        self.head.setPos(*head);self.head.setQuat(m.body.getQuat());self.head.setScale(.018)
-        face=m.point(m.body,(.099,0,0))
-        self.sensor_face.setPos(*face);self.sensor_face.setQuat(m.body.getQuat())
+        face=m.point(m.segments[2],(.037,0,0))
+        self.sensor_face.setPos(*face);self.sensor_face.setQuat(m.segments[2].getQuat())
         self.sensor_face.setH(self.sensor_face.getH()-90)
         if self.trail_node:self.trail_node.removeNode()
         if len(trail)>1:

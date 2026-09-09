@@ -27,7 +27,7 @@ class NewbornTests(unittest.TestCase):
 
     def test_birth_seed_changes_initial_network(self):
         self.assertNotEqual(NewbornController(17).weights,NewbornController(18).weights)
-        self.assertEqual(NewbornController(17).state,[[0.]*4 for _ in range(5)])
+        self.assertEqual(NewbornController(17).state,[[0.]*4 for _ in range(3)])
 
     def test_reference_mode_removed(self):
         with self.assertRaises(ValueError):World().step(mode='reference')
@@ -39,7 +39,7 @@ class NewbornTests(unittest.TestCase):
         w=World();obs=w.observation()
         changed=Observation(obs.belly[:-9]+(1.,)*9,(1.,)*9,obs.joint_touch,obs.support_touch,obs.hp,obs.damage_hp,obs.hunger,obs.food_relief)
         a.step(obs);b.step(changed)
-        self.assertEqual(a.state[:4],b.state[:4]);self.assertNotEqual(a.state[4],b.state[4])
+        self.assertEqual(a.state[:2],b.state[:2]);self.assertNotEqual(a.state[2],b.state[2])
 
     def test_position_is_not_an_input(self):
         a=World();cfg=read_config();cfg['spawn']={'x':5.,'y':2.,'heading_deg':90}
@@ -55,11 +55,11 @@ class NewbornTests(unittest.TestCase):
         w.sense()
         self.assertGreater(w.joint_touch[1],w.joint_touch[0])
         # Support requires an actual physics contact impulse, not a preset load.
-        for _ in range(5):w.step([0.]*6)
+        for _ in range(3):w.step([0.]*6)
         self.assertGreater(max(w.support_touch),cfg['sensor']['baseline'])
 
     def test_hunger_food_damage_and_death(self):
-        cfg=read_config();cfg['environment']=[dict(kind='food',x=.178,y=0,radius=.06,height=.12)]
+        cfg=read_config();cfg['environment']=[dict(kind='food',x=.27,y=0,radius=.06,height=.12)]
         w=World(cfg);w.hunger=70.;w.hp=50.
         recovered=[]
         for _ in range(35):
@@ -83,8 +83,8 @@ class NewbornTests(unittest.TestCase):
             recorder=Recorder(path,w);recorder.write(w.step());recorder.close()
             with path.open() as file:
                 meta=json.loads(file.readline()[2:]);rows=list(csv.reader(file))
-            self.assertEqual(meta['schema'],4);self.assertFalse(meta['training_enabled'])
-            self.assertEqual(len(rows[0]),len(rows[1]));self.assertEqual(list(map(float,rows[1][2:90])),obs)
+            self.assertEqual(meta['schema'],5);self.assertFalse(meta['training_enabled'])
+            self.assertEqual(len(rows[0]),len(rows[1]));self.assertEqual(list(map(float,rows[1][2:72])),obs)
             self.assertAlmostEqual(float(rows[1][rows[0].index('rear_grip')]),w.controller.grips[0])
 
     def test_static_input_converges_without_a_clock(self):
