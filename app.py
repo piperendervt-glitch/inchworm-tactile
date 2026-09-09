@@ -57,6 +57,25 @@ class App:
         selector = ttk.Combobox(controls, textvariable=self.scenario, values=['標準環境', '地面', '餌に接触', '害に接触', '段差に接触'], state='readonly', width=12)
         selector.pack(side='left', padx=8)
         selector.bind('<<ComboboxSelected>>', lambda e: self.reset())
+        support_bar = ttk.Frame(self.window, padding=5)
+        support_bar.pack(fill='x')
+        ttk.Label(support_bar, text='支持方式').pack(side='left')
+        self.support = tk.StringVar(value=self.config.get('physics',{}).get('strategy','directional'))
+        support_selector = ttk.Combobox(support_bar, textvariable=self.support, values=['directional','load_transfer','active_grip'], state='readonly', width=16)
+        support_selector.pack(side='left', padx=5)
+        support_selector.bind('<<ComboboxSelected>>', lambda e: self.reset())
+        ttk.Label(support_bar, text='制御').pack(side='left')
+        self.policy = tk.StringVar(value='ai')
+        policy_selector = ttk.Combobox(support_bar, textvariable=self.policy, values=['ai','reference'], state='readonly', width=12)
+        policy_selector.pack(side='left', padx=5)
+        policy_selector.bind('<<ComboboxSelected>>', lambda e: self.reset())
+        self.follow = tk.BooleanVar(value=True)
+        ttk.Checkbutton(support_bar, text='追従カメラ（OFFで固定）', variable=self.follow).pack(side='left', padx=5)
+        self.rear_grip = tk.BooleanVar(value=False)
+        self.front_grip = tk.BooleanVar(value=False)
+        ttk.Checkbutton(support_bar, text='手動: 後グリップ', variable=self.rear_grip).pack(side='left')
+        ttk.Checkbutton(support_bar, text='前グリップ', variable=self.front_grip).pack(side='left')
+        ttk.Label(support_bar, text='reference = 固定動作 / active_grip = 追加2出力の実験').pack(side='left', padx=8)
         self.canvas = tk.Canvas(self.window, bg='#101621', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         angles = ttk.Frame(self.window, padding=5)
@@ -93,6 +112,7 @@ class App:
         if scenario != '標準環境':
             kinds = {'餌に接触': 'food', '害に接触': 'harm', '段差に接触': 'obstacle'}
             config['environment'] = [] if scenario == '地面' else [{'kind': kinds[scenario], 'x': .245, 'y': 0., 'radius': .06, 'height': .04 if scenario != '害に接触' else .005}]
+        config.setdefault('physics',{})['strategy'] = self.support.get()
         self.world = World(config, self.weights)
         self.trail = []
         self.accumulator = 0.
@@ -112,7 +132,10 @@ class App:
         if path:
             from tkinter import messagebox
             try:
-                weights = json.loads(Path(path).read_text())['weights']
+                checkpoint = json.loads(Path(path).read_text())
+                if checkpoint.get('controller_version') != 2:
+                    raise ValueError('旧モデルの重みです。v2で再学習してください。')
+                weights = checkpoint['weights']
                 if len(weights) != 8 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in weights):
                     raise ValueError('8 finite weights required')
                 self.weights = weights
@@ -129,9 +152,9 @@ class App:
         self.text(x + 16, y + 39, subtitle, 10, '#9aacc4')
 
     def draw_scene(self, x, y, width, height):
-        self.panel(x, y, width, height, '01 / WORLD · 観察者専用CG', '疑似3D投影 / m単位 / 地面摩擦の簡易モデル / AIへの映像入力なし')
+        self.panel(x, y, width, height, '01 / WORLD · 観察者専用CG', '前後2点支持 / 相対関節5軸 / 接触・力・滑りは観察専用')
         scale = min(width / .95, (height - 100) / .48)
-        center = self.world.x + .19
+        center = self.world.x + .19 if self.follow.get() else .19
 
         def project(px, py, pz):
             return x + width * .38 + (px - center + py * .48) * scale, y + height * .73 + (py * .5 - pz) * scale
@@ -159,13 +182,26 @@ class App:
         for px, py in self.trail[-600::3]:
             sx, sy = project(px, py, .002)
             self.canvas.create_oval(sx - 1, sy - 1, sx + 1, sy + 1, fill='#53abbe', outline='')
-        for i in range(5):
+        for i in range(len(self.world.nodes)-1):
             a, b = self.world.nodes[i:i + 2]
             self.canvas.create_line(*project(*a), *project(*b), fill='#132d36', width=25, capstyle='round')
             self.canvas.create_line(*project(*a), *project(*b), fill='#63ddc1', width=16, capstyle='round')
             sx, sy = project(*a)
             self.canvas.create_oval(sx - 5, sy - 5, sx + 5, sy + 5, fill='#e1fff5', outline='')
-            self.text(sx, sy - 22, str(i + 1), 10)
+            self.text(sx, sy - 22, ('P' if i == 0 else str(i)), 10)
+        mechanics = self.world.mechanics
+        for idx, node_index in enumerate((0,-1)):
+            foot = self.world.nodes[node_index]
+            px,py = project(foot[0],foot[1],0.)
+            stick = mechanics.states[idx] == 'stick'
+            color = '#64e7bf' if stick else '#ffb75f'
+            self.canvas.create_rectangle(px-14,py-4,px+14,py+4,fill=color,outline='')
+            self.canvas.create_line(px,py-9,px,py-9-mechanics.loads[idx]*28,fill='#8dc9ff',arrow='last',width=3)
+            self.text(px,py+8,('REAR' if idx==0 else 'FRONT')+' / '+mechanics.states[idx],9,color,anchor='n')
+        center_x = (self.world.nodes[0][0]+self.world.nodes[-1][0])/2
+        self.text(x+16,y+64,f'正味X {(center_x-.135)*1000:+.1f} mm   軌跡長 {self.world.distance*1000:.1f} mm   {mechanics.reason}',11,'#ffd47d')
+        for idx,name in enumerate(('後足','前足')):
+            self.text(x+16,y+87+idx*20,f'{name}: N={mechanics.loads[idx]:.3f} N  F={mechanics.forces[idx]:+.3f} N  滑り={mechanics.slip[idx]*1000:+.2f} mm/frame  {mechanics.states[idx]}',10)
         h = self.world.nodes[-1]
         facing = self.world.heading + self.world.angles[5]
         self.canvas.create_line(*project(*h), *project(h[0] + .035 * math.cos(facing), h[1] + .035 * math.sin(facing), h[2]), fill='#ffd47d', width=6, arrow='last')
@@ -215,7 +251,7 @@ class App:
             self.text(cx, y + 224, f'実角 {math.degrees(self.world.angles[i]):+.1f}°', 10, '#9aacc4', anchor='center')
         weights = '  '.join(f'{v:+.2f}' for v in self.world.controller.weights)
         self.text(x + 16, y + height - 48, '共有パラメータ [速度, 結合, 振幅, 接触, 粗さ, 記憶, 左右, 前面]  ' + weights, 10)
-        label = 'MANUAL：ネットワーク更新停止' if self.manual.get() else f'頭部yaw目標 {math.degrees(self.world.targets[5]):+.1f}°'
+        label = '手動/固定動作：ネットワーク更新停止' if self.manual.get() or self.policy.get() == 'reference' else f'頭部yaw目標 {math.degrees(self.world.targets[5]):+.1f}°'
         self.text(x + 16, y + height - 25, '各節の4状態: cos位相 / sin位相 / 接触記憶 / 旋回記憶  · ' + label, 10, '#ffd47d')
 
     def update(self):
@@ -225,7 +261,7 @@ class App:
         if self.running and self.world.hp > 0:
             self.accumulator += elapsed * self.speed.get()
             while self.accumulator >= DT:
-                row = self.world.step([v.get() for v in self.sliders] if self.manual.get() else None)
+                row = self.world.step([v.get() for v in self.sliders] if self.manual.get() else None, mode=self.policy.get(), manual_grips=(self.rear_grip.get(),self.front_grip.get()))
                 if self.recorder:
                     self.recorder.write(row)
                 self.trail.append((self.world.x, self.world.y))
@@ -259,5 +295,8 @@ if __name__ == '__main__':
     parser.add_argument('--config')
     parser.add_argument('--weights')
     args = parser.parse_args()
-    weights = json.loads(Path(args.weights).read_text())['weights'] if args.weights else None
+    checkpoint = json.loads(Path(args.weights).read_text()) if args.weights else None
+    if checkpoint and checkpoint.get('controller_version') != 2:
+        parser.error('Checkpoint controller_version must be 2; retrain old weights.')
+    weights = checkpoint['weights'] if checkpoint else None
     App(read_config(args.config), weights).window.mainloop()

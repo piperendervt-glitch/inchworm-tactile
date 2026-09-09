@@ -1,0 +1,103 @@
+{
+  "controller_version": 2,
+  "weights": [
+    0.11287758429774261,
+    -0.12184497953956394,
+    0.45960237378274615,
+    0.9307155730771315,
+    0.8884955187853245,
+    0.2541277176346294,
+    0.5676884760215051,
+    0.8219503735826867
+  ],
+  "baseline": 887.3893333333352,
+  "score": 4145.383333333404,
+  "validation": 4145.383333333404,
+  "baseline_validation": 887.3893333333352,
+  "history": [
+    1290.0066666666737,
+    4005.6960000000995,
+    4145.383333333404
+  ],
+  "args": {
+    "generations": 3,
+    "population": 6,
+    "seconds": 45.0,
+    "seed": 42,
+    "output": "checkpoints/v2.json"
+  },
+  "config": {
+    "seed": 7,
+    "sensor": {
+      "baseline": 0.12,
+      "gain": 3.0,
+      "noise": 0.012,
+      "delay_frames": 2,
+      "pitch_m": 0.015
+    },
+    "materials": {
+      "ground": {
+        "hardness": 1.0,
+        "roughness": 0.0
+      },
+      "food": {
+        "hardness": 0.22,
+        "roughness": 0.03
+      },
+      "harm": {
+        "hardness": 1.0,
+        "roughness": 0.8
+      },
+      "obstacle": {
+        "hardness": 1.0,
+        "roughness": 0.0
+      }
+    },
+    "environment": [
+      {
+        "kind": "food",
+        "x": 0.4,
+        "y": 0.0,
+        "radius": 0.055,
+        "height": 0.04
+      },
+      {
+        "kind": "harm",
+        "x": 0.6,
+        "y": 0.0,
+        "radius": 0.08,
+        "height": 0.005
+      },
+      {
+        "kind": "obstacle",
+        "x": 0.83,
+        "y": 0.01,
+        "radius": 0.07,
+        "height": 0.065
+      },
+      {
+        "kind": "food",
+        "x": 1.04,
+        "y": 0.15,
+        "radius": 0.07,
+        "height": 0.04
+      }
+    ],
+    "physics": {
+      "strategy": "directional",
+      "mass_kg": 0.15,
+      "gravity": 9.81,
+      "mu_forward": 0.16,
+      "mu_backward": 1.1,
+      "mu_isotropic": 0.5,
+      "kinetic_ratio": 0.8,
+      "mu_released": 0.08,
+      "mu_gripped": 1.2,
+      "max_drive_n": 0.6,
+      "joint_torque_nm": 0.035,
+      "joint_rate_rad_s": 1.8,
+      "pad_height_m": 0.006
+    }
+  },
+  "note": "Noise-seed validation only; not evidence of generalization to new environments."
+}

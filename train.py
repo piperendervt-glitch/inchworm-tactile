@@ -50,7 +50,7 @@ def main():
     baseline_validation = evaluate(cfg, LocalNCA.DEFAULT, args.seconds, [101, 202])
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps({'weights': weights, 'baseline': baseline, 'score': score, 'validation': validation, 'baseline_validation': baseline_validation, 'history': history, 'args': vars(args), 'config': cfg, 'note': 'Noise-seed validation only; not evidence of generalization to new environments.'}, indent=2))
+    out.write_text(json.dumps({'controller_version': 2, 'weights': weights, 'baseline': baseline, 'score': score, 'validation': validation, 'baseline_validation': baseline_validation, 'history': history, 'args': vars(args), 'config': cfg, 'note': 'Noise-seed validation only; not evidence of generalization to new environments.'}, indent=2))
     print(f'Saved {out}; validation={validation:.3f}, baseline_validation={baseline_validation:.3f}')
 
 
