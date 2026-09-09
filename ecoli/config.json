@@ -1,0 +1,30 @@
+{
+  "bounds": [
+    -1,
+    1,
+    -0.7,
+    0.7
+  ],
+  "layout_seed": 7,
+  "spawn": [
+    0,
+    0,
+    0
+  ],
+  "random_spawn": false,
+  "obstacle_count": 5,
+  "harm_count": 3,
+  "food_count": 8,
+  "body_radius": 0.018,
+  "speed": 0.12,
+  "drag": 5.0,
+  "decision_seconds": 0.25,
+  "concentration_scale": 0.25,
+  "initial_energy": 100.0,
+  "basal_cost": 0.1,
+  "motion_cost": 0.2,
+  "damage_per_s": 8.0,
+  "food_per_s": 12.0,
+  "food_quantity": 30.0,
+  "sensor_noise": 0.005
+}
