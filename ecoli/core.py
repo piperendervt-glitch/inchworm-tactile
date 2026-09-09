@@ -6,7 +6,7 @@ import math
 import random
 
 DT=1/30
-DEFAULT=dict(bounds=[-1,1,-.7,.7],layout_seed=7,spawn=[0,0,0],random_spawn=False,
+DEFAULT=dict(environment='mixed',bounds=[-1,1,-.7,.7],layout_seed=7,spawn=[0,0,0],random_spawn=False,
              obstacle_count=5,harm_count=3,food_count=8,body_radius=.018,
              speed=.12,drag=5.,decision_seconds=.25,concentration_scale=.25,
              initial_energy=100.,basal_cost=.1,motion_cost=.2,damage_per_s=8.,
@@ -14,6 +14,13 @@ DEFAULT=dict(bounds=[-1,1,-.7,.7],layout_seed=7,spawn=[0,0,0],random_spawn=False
 
 def config(values=None):
     c=copy.deepcopy(DEFAULT);c.update(values or {})
+    if c['environment'] not in ('mixed','food_only'):raise ValueError('Unknown environment')
+    if c['environment']=='food_only':
+        c['obstacle_count']=0;c['harm_count']=0
+        if 'objects' in c:
+            c['objects']=[o for o in c['objects'] if o.get('kind')=='food']
+            if not c['objects']:raise ValueError('Food-only environment requires at least one food object')
+        elif c['food_count']<1:raise ValueError('Food-only environment requires food_count >= 1')
     for k in ('body_radius','speed','drag','decision_seconds','concentration_scale','food_quantity'):
         if not math.isfinite(c[k]) or c[k]<=0:raise ValueError(k+' must be positive')
     for k in ('initial_energy','basal_cost','motion_cost','damage_per_s','food_per_s','sensor_noise'):
@@ -73,7 +80,7 @@ class World:
         self.tick=0;self.energy=self.c['initial_energy'];self.damage=0.;self.food=0.
         self.damage_total=0.;self.food_total=0.;self.path=0.;self.contact_seconds=0.;self.contact=0.
         self.speed=0.;self.action='run';self.turn_left=0.;self.turn_rate=0.;self.decision_left=0.
-        self.turns=0;self.death_time=None;self.concentration=self.sense_concentration();self.last_inputs=[0.]*6
+        self.turns=0;self.death_time=None;self.first_food_time=None;self.concentration=self.sense_concentration();self.last_inputs=[0.]*6
 
     def sense_concentration(self):
         total=sum(math.exp(-math.hypot(self.x-o['x'],self.y-o['y'])/self.c['concentration_scale'])*o['remaining']/self.c['food_quantity'] for o in self.objects if o['kind']=='food')
@@ -115,6 +122,7 @@ class World:
             if o['kind']=='food':
                 amount=min(o['remaining'],self.c['food_per_s']*DT,100-self.energy)
                 o['remaining']-=amount;self.food+=amount;self.energy+=amount
+                if amount>0 and self.first_food_time is None:self.first_food_time=(self.tick+1)*DT
         self.damage=min(self.energy,self.c['damage_per_s']*DT if harmful else 0.)
         self.energy=max(0.,self.energy-self.damage-DT*(self.c['basal_cost']+self.c['motion_cost']*(self.speed/self.c['speed'])))
         self.damage_total+=self.damage;self.food_total+=self.food
@@ -130,7 +138,7 @@ class World:
                     **{f'input_{i}':v for i,v in enumerate(self.last_inputs)},
                     **{f'h{i}':v for i,v in enumerate(self.policy.state)})
     def summary(self):
-        return dict(seed=self.seed,elapsed_s=self.tick*DT,energy=self.energy,food=self.food_total,
+        return dict(seed=self.seed,environment=self.c['environment'],layout_seed=self.c['layout_seed'],first_food_s=self.first_food_time,elapsed_s=self.tick*DT,energy=self.energy,food=self.food_total,
                     damage=self.damage_total,path_m=self.path,contact_s=self.contact_seconds,
                     tumbles=self.turns,death_time=self.death_time,training_enabled=False,training_steps=0,
                     weights_sha256=self.policy.fingerprint)

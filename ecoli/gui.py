@@ -26,6 +26,16 @@ class App:
         self.layout.set(str(self.settings.get('layout_seed',7)))
         self.field=tk.BooleanVar(value=True)
         ttk.Checkbutton(bar,text='濃度の目安',variable=self.field).pack(side='left')
+        envbar=ttk.Frame(self.window,padding=5);envbar.pack(fill='x')
+        self.environment=tk.StringVar(value='餌だけ' if self.settings.get('environment')=='food_only' else '混合環境')
+        self.random_spawn=tk.BooleanVar(value=self.settings.get('random_spawn',False))
+        self.food_count=tk.StringVar(value=str(self.settings.get('food_count',8)))
+        ttk.Label(envbar,text='環境').pack(side='left',padx=5)
+        ttk.Combobox(envbar,textvariable=self.environment,values=['餌だけ','混合環境'],state='readonly',width=12).pack(side='left')
+        ttk.Checkbutton(envbar,text='初期位置・向きをランダム化',variable=self.random_spawn).pack(side='left',padx=10)
+        ttk.Label(envbar,text='ランダム配置の餌数').pack(side='left')
+        ttk.Entry(envbar,textvariable=self.food_count,width=5).pack(side='left',padx=5)
+        ttk.Label(envbar,text='配置seedを変えて新規実行 / 同じ比較内では全個体が同じ配置').pack(side='left',padx=10)
         self.status=tk.StringVar();ttk.Label(self.window,textvariable=self.status,padding=6).pack(fill='x')
         self.canvas=tk.Canvas(self.window,bg='#101923',highlightthickness=0);self.canvas.pack(fill='both',expand=True)
         self.table=ttk.Treeview(self.window,columns=('seed','seconds','food','damage','path','contact','turns','energy'),show='headings',height=6)
@@ -42,12 +52,14 @@ class App:
             from .core import config
             settings=json.loads(Path(path).read_text(encoding='utf-8'));config(settings)
             self.settings=settings;self.layout.set(str(settings.get('layout_seed',7)))
+            self.environment.set('餌だけ' if settings.get('environment')=='food_only' else '混合環境')
+            self.random_spawn.set(settings.get('random_spawn',False));self.food_count.set(str(settings.get('food_count',8)))
             self.output.set('設定を読み込みました。「新規実行」で適用します。')
         except Exception as error:messagebox.showerror('設定エラー',str(error))
 
     def start(self):
         try:
-            seeds=seeds_from_text(self.seeds.get());seconds=float(self.seconds.get());settings=dict(self.settings,layout_seed=int(self.layout.get()))
+            seeds=seeds_from_text(self.seeds.get());seconds=float(self.seconds.get());settings=dict(self.settings,layout_seed=int(self.layout.get()),environment='food_only' if self.environment.get()=='餌だけ' else 'mixed',random_spawn=self.random_spawn.get(),food_count=int(self.food_count.get()))
             # Validate world and duration before interrupting an existing run.
             from .core import World
             World(seeds[0],settings)
@@ -69,7 +81,7 @@ class App:
         xmin,xmax,ymin,ymax=w.c['bounds'];scale=min((mapw-50)/(xmax-xmin),(ch-55)/(ymax-ymin))
         def pt(x,y):return (25+(x-xmin)*scale,35+(ymax-y)*scale)
         a,b=pt(xmin,ymax);d,e=pt(xmax,ymin);c.create_rectangle(a,b,d,e,fill='#172b34',outline='#8297a8')
-        self.text(25,5,'WORLD / 視覚は観察専用・2D遊泳',12,'#6be6ca')
+        self.text(25,5,'WORLD / '+('餌だけ' if w.c['environment']=='food_only' else '混合環境')+' / 視覚は観察専用',12,'#6be6ca')
         for o in w.objects:
             if o['kind']=='food' and o['remaining']<=0:continue
             x,y=pt(o['x'],o['y']);r=o['radius']*scale

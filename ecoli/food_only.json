@@ -12,8 +12,8 @@
     0
   ],
   "random_spawn": true,
-  "obstacle_count": 5,
-  "harm_count": 3,
+  "obstacle_count": 0,
+  "harm_count": 0,
   "food_count": 8,
   "body_radius": 0.018,
   "speed": 0.12,

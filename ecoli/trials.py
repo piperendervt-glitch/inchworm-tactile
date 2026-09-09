@@ -48,8 +48,11 @@ class Trials:
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--seeds',default='0,1,2,3,4,5,6,7,8,9');p.add_argument('--seconds',type=float,default=60)
-    p.add_argument('--layout-seed',type=int);p.add_argument('--config');p.add_argument('--output',required=True)
+    p.add_argument('--environment',choices=['food_only','mixed']);p.add_argument('--layout-seed',type=int);p.add_argument('--config');p.add_argument('--output',required=True)
     a=p.parse_args();settings=json.loads(Path(a.config).read_text(encoding='utf-8')) if a.config else {}
+    if a.environment:
+        if not a.config:settings=json.loads(Path(__file__).with_name(a.environment+'.json').read_text(encoding='utf-8'))
+        settings['environment']=a.environment
     if a.layout_seed is not None:settings['layout_seed']=a.layout_seed
     try:t=Trials(seeds_from_text(a.seeds),a.seconds,settings,a.output)
     except ValueError as error:p.error(str(error))
