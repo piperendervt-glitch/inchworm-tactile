@@ -44,6 +44,20 @@ def sphere():
     return mesh('sphere',faces)
 
 
+def box():
+    faces=[]
+    for axis in range(3):
+        u,v=(axis+1)%3,(axis+2)%3
+        for sign in (-1,1):
+            normal=[0,0,0];normal[axis]=sign
+            corners=[]
+            for a,b in ((-1,-1),(1,-1),(1,1),(-1,1)):
+                point=[0,0,0];point[axis]=sign;point[u]=a;point[v]=b;corners.append(point)
+            if sign<0:corners.reverse()
+            faces.append((corners,normal))
+    return mesh('rigid-box',faces)
+
+
 class Renderer3D:
     def __init__(self,width=960,height=480):
         # Tk owns the Windows message loop. Letting Panda also consume messages
@@ -62,7 +76,7 @@ class Renderer3D:
         self.width,self.height=width,height
         self.base.camLens.setAspectRatio(width/height)
         self.root=self.base.render.attachNewNode('observer-world')
-        self.cylinder=cylinder();self.sphere=sphere()
+        self.cylinder=cylinder();self.sphere=sphere();self.box=box()
         self.yaw=-65.;self.elevation=32.;self.distance=.85
         self.target=Vec3(.22,0,.015)
         ambient=AmbientLight('ambient');ambient.setColor((.43,.46,.52,1))
@@ -84,13 +98,13 @@ class Renderer3D:
         self.grid=self.root.attachNewNode(lines.create());self.grid.setLightOff();self.grid.setShaderOff()
         self.links=[];self.joints=[];self.pads=[];self.loads=[]
         for i in range(6):
-            segment=self.sphere.copyTo(self.root);segment.setColor(.16,.70,.58,1)
+            segment=self.box.copyTo(self.root);segment.setColor(.16,.70,.58,1)
             self.links.append(segment)
         for i in range(7):
             joint=self.sphere.copyTo(self.root);joint.setColor(.73,.90,.86,1);joint.setScale(.009)
             self.joints.append(joint)
         for _ in range(2):
-            pad=self.cylinder.copyTo(self.root);pad.setScale(.02,.025,.005);self.pads.append(pad)
+            pad=self.box.copyTo(self.root);pad.setScale(.022,.035,.019);self.pads.append(pad)
             load=self.cylinder.copyTo(self.root);load.setColor(.25,.65,1,1);self.loads.append(load)
         self.head=self.sphere.copyTo(self.root);self.head.setColor(.95,.72,.29,1)
         self.head.setScale(.012,.017,.011)
@@ -130,24 +144,23 @@ class Renderer3D:
     def render(self,world,follow=True,trail=()):
         self.update_objects(world.objects)
         nodes=world.nodes
-        for i,(a,b) in enumerate(zip(nodes,nodes[1:])):
-            segment=self.links[i]
-            center=Point3(*[(a[k]+b[k])/2 for k in range(3)])
-            # Cosmetic thickness sits above the physical centerline to keep feet readable.
-            center.z+=.01
-            segment.setPos(center);segment.lookAt(Point3(b[0],b[1],b[2]+.01))
-            segment.setScale(.013,math.dist(a,b)/2,.012)
-        for node,point in zip(self.joints,nodes):node.setPos(point[0],point[1],point[2]+.01)
-        for i,index in enumerate((0,-1)):
-            point=nodes[index];self.pads[i].setPos(point[0],point[1],.0006)
-            self.pads[i].setColor(*((.20,.90,.66,1) if world.mechanics.states[i]=='stick' else (1,.57,.16,1)))
-            self.loads[i].setPos(point[0],point[1],.03)
-            self.loads[i].setScale(.0018,.0018,world.mechanics.loads[i]*.05)
-        head=nodes[-1];heading=world.heading+world.angles[5]
-        self.head.setPos(head[0],head[1],head[2]+.013)
-        self.head.setH(math.degrees(heading)-90)
-        self.sensor_face.setPos(head[0]+.009*math.cos(heading),head[1]+.009*math.sin(heading),head[2]+.013)
-        self.sensor_face.setH(math.degrees(heading)-90)
+        m=world.mechanics
+        for i,(part,size) in enumerate(zip([m.body]+m.legs,[(.075,.025,.018),(.011,.012,.033),(.011,.012,.033)])):
+            self.links[i].setPos(part.getPos());self.links[i].setQuat(part.getQuat());self.links[i].setScale(*size)
+        for link in self.links[3:]:link.hide()
+        for i,node in enumerate(self.joints):
+            if i<2:node.setPos(*nodes[1 if i==0 else 5])
+            else:node.hide()
+        for i,point in enumerate(m.feet()):
+            self.pads[i].setPos(*point);self.pads[i].setQuat(m.legs[i].getQuat())
+            self.pads[i].setColor(*{'grip':(.20,.90,.66,1),'contact':(1,.57,.16,1),'air':(.45,.48,.55,1)}[m.states[i]])
+            self.loads[i].setPos(point[0],point[1],point[2]+.02)
+            self.loads[i].setScale(.0018,.0018,max(.00001,m.loads[i]*.05))
+        head=m.head_position()
+        self.head.setPos(*head);self.head.setQuat(m.body.getQuat());self.head.setScale(.018)
+        face=m.point(m.body,(.099,0,0))
+        self.sensor_face.setPos(*face);self.sensor_face.setQuat(m.body.getQuat())
+        self.sensor_face.setH(self.sensor_face.getH()-90)
         if self.trail_node:self.trail_node.removeNode()
         if len(trail)>1:
             line=LineSegs('trail');line.setColor(.2,.9,.82,1);line.setThickness(2)
@@ -155,7 +168,7 @@ class Renderer3D:
                 if i==0:line.moveTo(point[0],point[1],.001)
                 else:line.drawTo(point[0],point[1],.001)
             self.trail_node=self.root.attachNewNode(line.create());self.trail_node.setLightOff();self.trail_node.setShaderOff()
-        if follow:self.target=Vec3((nodes[0][0]+nodes[-1][0])/2+.05,(nodes[0][1]+nodes[-1][1])/2,.025)
+        if follow:self.target=Vec3(*m.center())
         self.floor.setPos(self.target.x,self.target.y,0.)
         self.grid.setPos(round(self.target.x*10)/10,round(self.target.y*10)/10,0.)
         yaw=math.radians(self.yaw);elevation=math.radians(self.elevation)

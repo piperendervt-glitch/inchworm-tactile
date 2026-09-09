@@ -34,8 +34,8 @@ def layout_from_config(config):
 
 def body_distance(x,y,spawn):
     angle=math.radians(spawn['heading_deg'])
-    vx,vy=.27*math.cos(angle),.27*math.sin(angle)
-    t=max(0.,min(1.,((x-spawn['x'])*vx+(y-spawn['y'])*vy)/(.27**2)))
+    vx,vy=.183*math.cos(angle),.183*math.sin(angle)
+    t=max(0.,min(1.,((x-spawn['x'])*vx+(y-spawn['y'])*vy)/(.183**2)))
     return math.hypot(x-spawn['x']-t*vx,y-spawn['y']-t*vy)
 
 
@@ -68,7 +68,7 @@ def resolve_layout(layout):
         angle=math.radians(spawn['heading_deg'])
         for _ in range(2000):
             spawn['x']=rng.uniform(xmin,xmax);spawn['y']=rng.uniform(ymin,ymax)
-            hx,hy=spawn['x']+.27*math.cos(angle),spawn['y']+.27*math.sin(angle)
+            hx,hy=spawn['x']+.183*math.cos(angle),spawn['y']+.183*math.sin(angle)
             if not (xmin+.03<=min(spawn['x'],hx) and max(spawn['x'],hx)<=xmax-.03 and ymin+.03<=min(spawn['y'],hy) and max(spawn['y'],hy)<=ymax-.03):continue
             if all(body_distance(o['x'],o['y'],spawn)>o['radius']+.03 for o in manual):break
         else:raise ValueError('AIを配置できません。範囲を広げるか固定物体を減らしてください')

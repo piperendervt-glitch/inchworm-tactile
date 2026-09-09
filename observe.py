@@ -17,13 +17,13 @@ def observe(config,seconds=30,csv_path=None):
             if recorder:recorder.write(row)
     finally:
         if recorder:recorder.close()
-    center=[(world.nodes[0][i]+world.nodes[-1][i])/2 for i in range(3)]
-    return dict(controller_version=3,training_enabled=False,training_steps=world.controller.training_steps,
+    center=world.mechanics.center()
+    return dict(controller_version=4,training_enabled=False,training_steps=world.controller.training_steps,
         requested_seconds=seconds,elapsed_seconds=world.tick*DT,controller_seed=world.controller.seed,
         weights_sha256=world.controller.fingerprint,weights_unchanged=before==world.controller.weights,
         initial_spawn=world.initial_spawn,objects=world.objects,displacement_m=[center[i]-world.initial_center[i] for i in range(3)],
         hp=world.hp,hunger=world.hunger,food_events=world.food_events,last_damage_hp=world.damage_hp,
-        target_angles_rad=world.targets,support_commands=world.controller.grips,physics_reasons=dict(reasons),config=world.config)
+        actual_angles_rad=world.angles,body_center_m=world.mechanics.center(),target_angles_rad=world.targets,support_commands=world.controller.grips,physics_reasons=dict(reasons),config=world.config)
 
 
 if __name__=='__main__':

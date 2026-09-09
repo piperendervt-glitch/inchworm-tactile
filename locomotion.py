@@ -1,107 +1,139 @@
-"""Reduced planar two-pad mechanics, not a general rigid-body solver.
-
-Six equal rigid links, five relative pitch joints, two compliant level feet.
-Pitch/height of the floating body are solved from the two floor supports.
-Normal loads follow static force and moment balance. Coulomb stick/slip is
-controlled only by independent continuous gripper commands.
-"""
+"""Bullet rigid-body contact dynamics. No prescribed locomotion or pose rollback."""
 import math
-
-DEFAULT_PHYSICS = dict(strategy='active_grip', mass_kg=.15, gravity=9.81,
-    kinetic_ratio=.8,
-    mu_released=.08, mu_gripped=1.2, max_drive_n=.6,
-    joint_torque_nm=.035, joint_rate_rad_s=1.8, pad_height_m=.006)
+from panda3d.core import Vec3, Point3, NodePath, TransformState, Quat
+from panda3d.bullet import (BulletWorld, BulletRigidBodyNode, BulletBoxShape,
+    BulletSphereShape, BulletPlaneShape, BulletCylinderShape, BulletGenericConstraint)
 
 
-def shape(joints, length=.270):
-    points = [(0., 0.)]
-    angle = 0.
-    for i in range(6):
-        if i:
-            angle += joints[i - 1]
-        points.append((points[-1][0] + length / 6 * math.cos(angle),
-                       points[-1][1] + length / 6 * math.sin(angle)))
-    # The rear pad has a passive pitch connection; both pads stay level.
-    rotation = -math.atan2(points[-1][1], points[-1][0])
-    c, s = math.cos(rotation), math.sin(rotation)
-    return [(x*c-z*s, x*s+z*c) for x,z in points]
+class RigidMechanics:
+    def __init__(self, settings=None, spawn=None, objects=()):
+        self.settings=dict(strategy='rigid_contact',mass_kg=.15,gravity=9.81,
+            mu_released=.35,mu_gripped=1.2,joint_torque_nm=.035,
+            joint_rate_rad_s=1.8,grip_force_n=2.,substeps=8)
+        self.settings.update(settings or {})
+        for k in ('mass_kg','gravity','joint_torque_nm','joint_rate_rad_s','grip_force_n'):
+            if not math.isfinite(self.settings[k]) or self.settings[k]<=0:raise ValueError('Invalid physics '+k)
+        if not isinstance(self.settings['substeps'],int) or not 1<=self.settings['substeps']<=32:raise ValueError('Invalid substeps')
+        for k in ('mu_released','mu_gripped'):
+            if not math.isfinite(self.settings[k]) or self.settings[k]<0:raise ValueError('Invalid friction')
+        self.world=BulletWorld();self.world.setGravity(Vec3(0,0,-self.settings['gravity']))
+        self.root=NodePath('physics');self.static=[];self.obstacles=[]
+        floor=self.make('floor',0,BulletPlaneShape(Vec3(0,0,1),0),(0,0,0))
+        floor.node().setFriction(1.);self.static.append(floor)
+        for o in objects:
+            if o['kind']!='obstacle':continue  # Food and harm are contact-sensitive material regions.
+            shape=BulletCylinderShape(o['radius'],o['height']);shape.setMargin(.001)
+            p=self.make('obstacle',0,shape,(o['x'],o['y'],o['height']/2))
+            self.static.append(p);self.obstacles.append(p)
+        spawn=spawn or dict(x=0.,y=0.,heading_deg=0.)
+        q=Quat();q.setFromAxisAngle(spawn['heading_deg'],Vec3(0,0,1))
+        origin=Vec3(spawn['x'],spawn['y'],0)
+        def pos(x,y,z):return origin+q.xform(Vec3(x-.06,y,z))
+        mass=self.settings['mass_kg']
+        bodyshape=BulletBoxShape(Vec3(.075,.025,.018));bodyshape.setMargin(.001)
+        self.body=self.make('body',mass*.7,bodyshape,pos(.135,0,.09),q)
+        # Fixed head is a second collision shape belonging to the torso.
+        self.body.node().addShape(BulletSphereShape(.018),TransformState.makePos(Vec3(.09,0,0)))
+        self.legs=[];self.joints=[]
+        for i,x in enumerate((.06,.21)):
+            shape=BulletBoxShape(Vec3(.011,.012,.033));shape.setMargin(.001)
+            leg=self.make(('rear','front')[i],mass*.15,shape,pos(x,0,.057),q)
+            footshape=BulletBoxShape(Vec3(.022,.035,.019));footshape.setMargin(.001)
+            leg.node().addShape(footshape,TransformState.makePos(Vec3(0,0,-.038)))
+            self.legs.append(leg)
+            joint=BulletGenericConstraint(self.body.node(),leg.node(),
+                TransformState.makePos(Vec3(x-.135,0,0)),TransformState.makePos(Vec3(0,0,.033)),True)
+            for axis in range(3):
+                joint.setLinearLimit(axis,0,0)
+                joint.setAngularLimit(axis,-52,52)  # Panda wrapper takes degrees here.
+                motor=joint.getRotationalLimitMotor(axis)
+                motor.setMotorEnabled(True);motor.setMaxMotorForce(self.settings['joint_torque_nm'])
+            self.world.attachConstraint(joint,True);self.joints.append(joint)
+        self.grips=[0.,0.];self.anchors=[None,None]
+        self.loads=[0.,0.];self.slip=[0.,0.];self.slip_total=[0.,0.];self.forces=[0.,0.]
+        self.capacity=[0.,0.];self.states=['air','air'];self.reason='rigid contact'
+        self.obstacle_contact=False
 
+    def make(self,name,mass,shape,pos,quat=None):
+        node=BulletRigidBodyNode(name);node.setMass(mass);node.addShape(shape)
+        node.setFriction(.6);node.setRestitution(0.)
+        node.setLinearDamping(.08);node.setAngularDamping(.15)
+        node.setDeactivationEnabled(False)
+        path=self.root.attachNewNode(node);path.setPos(pos)
+        if quat is not None:path.setQuat(quat)
+        self.world.attachRigidBody(node)
+        return path
 
-def normal_loads(points, weight):
-    span = points[-1][0]
-    # Equal link masses, at link centers (not the mean of unequal endpoints).
-    com = sum((points[i][0] + points[i+1][0])/2 for i in range(6))/6
-    front = max(0., min(weight, weight*com/max(span, 1e-9)))
-    return [weight-front, front]
+    def point(self,path,xyz):return tuple(path.getPos()+path.getQuat().xform(Vec3(*xyz)))
+    def feet(self):return [self.point(p,(0,0,-.038)) for p in self.legs]
+    def center(self):return tuple(self.body.getPos())
+    def head_position(self):return self.point(self.body,(.09,0,0))
+    def heading(self):
+        v=self.body.getQuat().xform(Vec3(1,0,0));return math.atan2(v.y,v.x)
+    def orientation(self):
+        v=self.body.getQuat().xform(Vec3(1,0,0))
+        return (-math.atan2(v.z,math.hypot(v.x,v.y)),self.heading(),math.radians(self.body.getR()))
+    def angles(self):return [j.getAngle(a) for j in self.joints for a in range(3)]
+    def geometry(self):
+        rear,front=self.feet()
+        return [rear]+[self.point(self.body,(x,0,0)) for x in (-.075,-.0375,0,.0375,.075)]+[front]
+    def surface_points(self):
+        # Five skin patches: rear foot, three torso patches, front foot.
+        out=[]
+        for p,x,z in [(self.legs[0],0,-.057)]+[(self.body,x,-.018) for x in (-.045,0,.045)]+[(self.legs[1],0,-.057)]:
+            for row in range(3):
+                for col in range(3):out.append(self.point(p,(x+(row-1)*.015,(col-1)*.015,z)))
+        return out
 
+    def contacts(self,leg):
+        return [c for ground in self.static for c in self.world.contactTestPair(leg.node(),ground.node()).getContacts()
+                if c.getManifoldPoint().getDistance()<.001]
 
-class PadMechanics:
-    def __init__(self, settings=None):
-        self.settings = DEFAULT_PHYSICS | (settings or {})
-        p = self.settings
-        if p['strategy'] != 'active_grip':
-            raise ValueError('Newborn mode requires independently controlled active_grip supports')
-        for key in ('mass_kg','gravity','max_drive_n','joint_torque_nm','joint_rate_rad_s'):
-            if not math.isfinite(p[key]) or p[key] <= 0:
-                raise ValueError(f'{key} must be positive and finite')
-        for key in ('mu_released','mu_gripped','pad_height_m'):
-            if not math.isfinite(p[key]) or p[key] < 0:
-                raise ValueError(f'{key} must be nonnegative and finite')
-        if not 0 < p['kinetic_ratio'] <= 1:
-            raise ValueError('kinetic_ratio must be in (0, 1]')
-        self.loads = [p['mass_kg']*p['gravity']/2]*2
-        self.slip = [0.,0.]
-        self.forces = [0.,0.]
-        self.capacity = [0.,0.]
-        self.grips = [False,False]
-        self.states = ['stick','stick']
-        self.reason = 'rest'
-        self.slip_total = [0.,0.]
-
-    def advance(self, old, candidate, dt, grips=(False,False)):
-        p = self.settings
-        before, after = shape(old[:5]), shape(candidate[:5])
-        self.loads = normal_loads(after, p['mass_kg']*p['gravity'])
-        if len(grips)!=2 or not all(math.isfinite(g) and 0<=g<=1 for g in grips):
-            raise ValueError('Two support actuator commands in [0,1] required')
-        self.grips = list(grips)
-        self.slip = [0.,0.]
-        self.forces = [0.,0.]
-        self.states = ['stick','stick']
-        # A two-pad model cannot accommodate a belly penetrating the floor.
-        if min(z for _,z in after) < -1e-7 or after[-1][0] < .07:
-            self.reason = 'body-ground limit'
-            self.loads = normal_loads(before, p['mass_kg']*p['gravity'])
-            self.capacity = [0.,0.]
-            return old[:], 0.
-        delta = after[-1][0]-before[-1][0]
-        mus=[p['mu_released']+(p['mu_gripped']-p['mu_released'])*grip for grip in grips]
-        self.capacity = [mu*n for mu,n in zip(mus,self.loads)]
-        if abs(delta)<1e-10:
-            self.reason = 'rest'
-            return candidate[:], 0.
-        work_bound = p['joint_torque_nm']*sum(abs(a-b) for a,b in zip(old[:5],candidate[:5]))/abs(delta)
-        drive = min(p['max_drive_n'],work_bound)
-        low = min(self.capacity)
-        if drive < low:
-            self.reason = 'force limit'
-            self.loads = normal_loads(before,p['mass_kg']*p['gravity'])
-            self.capacity = [mu*n for mu,n in zip(mus,self.loads)]
-            self.forces = [drive,-drive] if delta>0 else [-drive,drive]
-            return old[:],0.
-        # Equal resistance: both ends slip symmetrically; no artificial winner.
-        if abs(self.capacity[0]-self.capacity[1]) < 1e-9:
-            rear_move = -delta/2
-            self.states = ['slip','slip']
-        elif self.capacity[0] > self.capacity[1]:
-            rear_move = 0.
-            self.states[1] = 'slip'
-        else:
-            rear_move = -delta
-            self.states[0] = 'slip'
-        self.slip = [rear_move,rear_move+delta]
-        force = low*p['kinetic_ratio']
-        self.forces = [force,-force] if delta>0 else [-force,force]
-        self.reason = 'extend' if delta>0 else 'contract'
-        self.slip_total = [total+abs(slip) for total,slip in zip(self.slip_total,self.slip)]
-        return candidate[:],rear_move
+    def advance(self,targets,dt,grips):
+        if len(targets)!=6 or not all(math.isfinite(v) for v in targets):raise ValueError('Six finite angles required')
+        if len(grips)!=2 or not all(math.isfinite(g) and 0<=g<=1 for g in grips):raise ValueError('Grips must be in [0,1]')
+        self.grips=list(grips);before=self.feet();self.loads=[0.,0.];self.forces=[0.,0.]
+        substeps=self.settings['substeps'];h=dt/substeps
+        for _ in range(substeps):
+            for i,joint in enumerate(self.joints):
+                for axis in range(3):
+                    error=targets[i*3+axis]-joint.getAngle(axis)
+                    rate=self.settings['joint_rate_rad_s']
+                    joint.getRotationalLimitMotor(axis).setTargetVelocity(max(-rate,min(rate,error*12)))
+            for i,leg in enumerate(self.legs):
+                contacts=self.contacts(leg);g=grips[i]
+                leg.node().setFriction(self.settings['mu_released']+(self.settings['mu_gripped']-self.settings['mu_released'])*g)
+                if g<.1:self.anchors[i]=None
+                if self.anchors[i] is None and contacts and g>=.1:
+                    c=contacts[0];worldpoint=c.getManifoldPoint().getPositionWorldOnA()
+                    local=leg.getQuat().conjugate().xform(worldpoint-leg.getPos())
+                    self.anchors[i]=(Vec3(worldpoint),local)
+                anchor=self.anchors[i]
+                force=Vec3(0)
+                if anchor is not None:
+                    fixed,local=anchor;r=leg.getQuat().xform(local)
+                    delta=fixed-(leg.getPos()+r)
+                    velocity=leg.node().getLinearVelocity()+leg.node().getAngularVelocity().cross(r)
+                    force=delta*140-velocity*.8
+                    limit=self.settings['grip_force_n']*g
+                    # A finite spring grip breaks under overload; no remote air anchoring.
+                    if delta.length()>.012 or force.length()>limit*2:
+                        self.anchors[i]=None;force=Vec3(0)
+                    else:
+                        if force.length()>limit:force*=limit/force.length()
+                        leg.node().applyForce(force,r)
+                self.forces[i]+=force.length()/substeps
+            self.world.doPhysics(h,0)
+            for i,leg in enumerate(self.legs):
+                # Solver impulse / dt gives average normal contact load.
+                self.loads[i]+=sum(max(0.,p.getAppliedImpulse()) for m in self.world.getManifolds()
+                    if (m.getNode0()==leg.node() and any(m.getNode1()==g.node() for g in self.static))
+                    or (m.getNode1()==leg.node() and any(m.getNode0()==g.node() for g in self.static))
+                    for p in m.getManifoldPoints() if p.getDistance()<.001)/dt
+        after=self.feet()
+        self.slip=[math.hypot(b[0]-a[0],b[1]-a[1]) for a,b in zip(before,after)]
+        self.slip_total=[a+b for a,b in zip(self.slip_total,self.slip)]
+        self.states=['grip' if self.anchors[i] is not None else ('contact' if self.contacts(p) else 'air') for i,p in enumerate(self.legs)]
+        self.capacity=[self.settings['grip_force_n']*g for g in grips]
+        self.obstacle_contact=any(self.world.contactTestPair(p.node(),o.node()).getNumContacts()>0 for p in [self.body]+self.legs for o in self.obstacles)
+        self.reason='obstacle contact' if self.obstacle_contact else 'rigid contact'

@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from core import World,Recorder,read_config
 from newborn import NewbornController,Observation
-from locomotion import PadMechanics,shape,normal_loads
 
 
 class NewbornTests(unittest.TestCase):
@@ -22,7 +21,7 @@ class NewbornTests(unittest.TestCase):
         base=World().observation()
         obs=Observation(base.belly,base.head,base.joint_touch,base.support_touch,.7,.02,.8,.3)
         controller=NewbornController();controller.step(obs)
-        for inputs in controller.local_inputs:self.assertEqual(inputs[29:33],[.7,.02,.8,.3])
+        for inputs in controller.local_inputs:self.assertEqual(inputs[33:37],[.7,.02,.8,.3])
         cfg=read_config();cfg['controller']['training_enabled']=True
         with self.assertRaises(ValueError):World(cfg)
 
@@ -55,10 +54,12 @@ class NewbornTests(unittest.TestCase):
         w.sense();w.sense();self.assertEqual(w.joint_touch,baseline)
         w.sense()
         self.assertGreater(w.joint_touch[1],w.joint_touch[0])
+        # Support requires an actual physics contact impulse, not a preset load.
+        for _ in range(5):w.step([0.]*6)
         self.assertGreater(max(w.support_touch),cfg['sensor']['baseline'])
 
     def test_hunger_food_damage_and_death(self):
-        cfg=read_config();cfg['environment']=[dict(kind='food',x=.284,y=0,radius=.06,height=.04)]
+        cfg=read_config();cfg['environment']=[dict(kind='food',x=.178,y=0,radius=.06,height=.12)]
         w=World(cfg);w.hunger=70.;w.hp=50.
         recovered=[]
         for _ in range(35):
@@ -82,8 +83,8 @@ class NewbornTests(unittest.TestCase):
             recorder=Recorder(path,w);recorder.write(w.step());recorder.close()
             with path.open() as file:
                 meta=json.loads(file.readline()[2:]);rows=list(csv.reader(file))
-            self.assertEqual(meta['schema'],3);self.assertFalse(meta['training_enabled'])
-            self.assertEqual(len(rows[0]),len(rows[1]));self.assertEqual(list(map(float,rows[1][2:88])),obs)
+            self.assertEqual(meta['schema'],4);self.assertFalse(meta['training_enabled'])
+            self.assertEqual(len(rows[0]),len(rows[1]));self.assertEqual(list(map(float,rows[1][2:90])),obs)
             self.assertAlmostEqual(float(rows[1][rows[0].index('rear_grip')]),w.controller.grips[0])
 
     def test_static_input_converges_without_a_clock(self):
@@ -91,30 +92,6 @@ class NewbornTests(unittest.TestCase):
         for _ in range(200):controller.step(obs)
         before=controller.state[:];controller.step(obs)
         self.assertLess(max(abs(x-y) for a,b in zip(before,controller.state) for x,y in zip(a,b)),1e-10)
-
-
-class PhysicsTests(unittest.TestCase):
-    def test_continuous_support_changes_friction_capacity(self):
-        values=[]
-        for grip in (0.,.5,1.):
-            m=PadMechanics();m.advance([0.]*6,[0.]*6,1/30,[grip,grip]);values.append(m.capacity[0])
-        self.assertLess(values[0],values[1]);self.assertLess(values[1],values[2])
-
-    def test_support_limits_and_symmetry(self):
-        m=PadMechanics();old=[0.]*6;candidate=[-.06]*5+[0.]
-        actual,dx=m.advance(old,candidate,1/30,[1.,1.])
-        self.assertEqual(actual,old);self.assertEqual(dx,0.)
-        actual,dx=m.advance(old,candidate,1/30,[0.,0.])
-        self.assertAlmostEqual(dx+(shape(candidate[:5])[-1][0]-shape(old[:5])[-1][0])/2,0.)
-        with self.assertRaises(ValueError):m.advance(old,candidate,1/30,[1.2,0.])
-
-    def test_geometric_and_load_balance(self):
-        points=shape([-.1,-.2,-.3,-.2,-.1]);rear,front=normal_loads(points,1.4715)
-        self.assertAlmostEqual(rear+front,1.4715)
-        com=sum((points[i][0]+points[i+1][0])/2 for i in range(6))/6
-        self.assertAlmostEqual(front*points[-1][0],com*1.4715)
-        self.assertAlmostEqual(points[-1][1],0.)
-        for a,b in zip(points,points[1:]):self.assertAlmostEqual(math.dist(a,b),.045)
 
 
 if __name__=='__main__':unittest.main()

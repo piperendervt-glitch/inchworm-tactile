@@ -93,7 +93,7 @@ class App:
         for i in range(6):
             group = ttk.Frame(angles)
             group.pack(side='left', expand=True, fill='x')
-            ttk.Label(group, text=f'節{i + 1} pitch' if i < 5 else '頭部 yaw').pack()
+            ttk.Label(group, text=('後脚 X','後脚 Y','後脚 Z','前脚 X','前脚 Y','前脚 Z')[i]).pack()
             var = tk.DoubleVar(value=0)
             ttk.Scale(group, variable=var, from_=-.9, to=.9).pack(fill='x', padx=8)
             self.sliders.append(var)
@@ -151,9 +151,9 @@ class App:
             kinds = {'餌に接触': 'food', '害に接触': 'harm', '段差に接触': 'obstacle'}
             spawn=config.get('spawn',{})
             heading=math.radians(spawn.get('heading_deg',0.))
-            hx=spawn.get('x',0.)+.27*math.cos(heading)
-            hy=spawn.get('y',0.)+.27*math.sin(heading)
-            config['environment'] = [] if scenario == '地面' else [{'kind': kinds[scenario], 'x': hx, 'y': hy, 'radius': .06, 'height': .04 if scenario != '害に接触' else .005}]
+            hx=spawn.get('x',0.)+.165*math.cos(heading)
+            hy=spawn.get('y',0.)+.165*math.sin(heading)
+            config['environment'] = [] if scenario == '地面' else [{'kind': kinds[scenario], 'x': hx, 'y': hy, 'radius': .06, 'height': .12 if scenario != '害に接触' else .005}]
         from layout import integer
         try:seed=integer(self.birth_seed.get(),'個体seed',0,2147483647)
         except ValueError as error:
@@ -224,14 +224,14 @@ class App:
         self.photo3d=ImageTk.PhotoImage(frame.resize((image_width,image_height),Image.Resampling.BILINEAR),master=self.window)
         self.canvas.create_image(x+1,y+62,image=self.photo3d,anchor='nw')
         m=self.world.mechanics
-        cx=(self.world.nodes[0][0]+self.world.nodes[-1][0])/2
+        cx=self.world.mechanics.center()[0]
         self.canvas.create_rectangle(x+10,y+70,x+min(width-10,525),y+137,fill='#182231',outline='')
         self.text(x+18,y+74,f'正味X {(cx-self.world.initial_center[0])*1000:+.1f} mm / {m.reason}',11,'#ffd47d')
         for i,name in enumerate(('後足','前足')):
-            self.text(x+18,y+96+i*18,f'{name} {m.states[i]} · 荷重 {m.loads[i]:.3f} N · 滑り {m.slip[i]*1000:+.2f} mm/frame',9)
+            self.text(x+18,y+96+i*18,f'{name} {m.states[i]} · 荷重 {m.loads[i]:.3f} N · 足移動 {m.slip[i]*1000:+.2f} mm/frame',9)
 
     def draw_legacy_scene(self, x, y, width, height):
-        self.panel(x, y, width, height, '01 / WORLD · 観察者専用CG', '前後2点支持 / 相対関節5軸 / 接触・力・滑りは観察専用')
+        self.panel(x, y, width, height, '01 / WORLD · 観察者専用CG', '剛体3個＋固定頭 / 前後関節XYZ / Bullet接触物理')
         scale = min(width / .95, (height - 100) / .48)
         center = self.world.x + .19 if self.follow.get() else self.world.initial_spawn['x']+.19
 
@@ -271,23 +271,23 @@ class App:
         mechanics = self.world.mechanics
         for idx, node_index in enumerate((0,-1)):
             foot = self.world.nodes[node_index]
-            px,py = project(foot[0],foot[1],0.)
-            stick = mechanics.states[idx] == 'stick'
+            px,py = project(foot[0],foot[1],foot[2])
+            stick = mechanics.states[idx] == 'grip'
             color = '#64e7bf' if stick else '#ffb75f'
             self.canvas.create_rectangle(px-14,py-4,px+14,py+4,fill=color,outline='')
             self.canvas.create_line(px,py-9,px,py-9-mechanics.loads[idx]*28,fill='#8dc9ff',arrow='last',width=3)
             self.text(px,py+8,('REAR' if idx==0 else 'FRONT')+' / '+mechanics.states[idx],9,color,anchor='n')
-        center_x = (self.world.nodes[0][0]+self.world.nodes[-1][0])/2
+        center_x = self.world.mechanics.center()[0]
         self.text(x+16,y+64,f'正味X {(center_x-self.world.initial_center[0])*1000:+.1f} mm   軌跡長 {self.world.distance*1000:.1f} mm   {mechanics.reason}',11,'#ffd47d')
         for idx,name in enumerate(('後足','前足')):
-            self.text(x+16,y+87+idx*20,f'{name}: N={mechanics.loads[idx]:.3f} N  F={mechanics.forces[idx]:+.3f} N  滑り={mechanics.slip[idx]*1000:+.2f} mm/frame  {mechanics.states[idx]}',10)
-        h = self.world.nodes[-1]
-        facing = self.world.heading + self.world.angles[5]
+            self.text(x+16,y+87+idx*20,f'{name}: N={mechanics.loads[idx]:.3f} N  F={mechanics.forces[idx]:+.3f} N  足移動={mechanics.slip[idx]*1000:+.2f} mm/frame  {mechanics.states[idx]}',10)
+        h = self.world.mechanics.head_position()
+        facing = self.world.heading
         self.canvas.create_line(*project(*h), *project(h[0] + .035 * math.cos(facing), h[1] + .035 * math.sin(facing), h[2]), fill='#ffd47d', width=6, arrow='last')
         self.text(x + 16, y + height - 30, f'head ({h[0]:+.3f}, {h[1]:+.3f}, {h[2]:+.3f}) m  · 観察・記録のみ', 10)
 
     def draw_tactile(self,x,y,width,height):
-        self.panel(x,y,width,height,'02 / INPUT · 触覚と身体内部の状態','腹45 + 頭9 + 曲げ10 + 支持18セル / 輝度 / 30 Hz')
+        self.panel(x,y,width,height,'02 / INPUT · 触覚と身体内部の状態','表面45 + 頭9 + 関節12 + 支持18セル / 輝度 / 30 Hz')
         gap=2 if self.gaps.get() else 0
         def cell(px,py,value,size):
             level=round(255*min(1,value*self.display_gain.get())**(1/self.gamma.get()))
@@ -298,7 +298,7 @@ class App:
             for i,value in enumerate(values):cell(px+(i%cols)*size,py+(i//cols)*size,value,size)
         if self.vertical.get():
             size=min(19,(height-110)/15)
-            grid(x+15,y+85,self.world.belly,3,size,'腹側（尾→頭）')
+            grid(x+15,y+85,self.world.belly,3,size,'表面：後脚・胴・前脚')
             sx=x+90;small=min(18,(width-110)/11)
             grid(sx,y+85,self.world.head,3,small,'頭')
             grid(sx+4*small,y+85,self.world.support_touch[:9],3,small,'後支持')
@@ -307,14 +307,14 @@ class App:
         else:
             size=min(24,(width-40)/15,(height-115)/11)
             values=[self.world.belly[seg*9+row*3+col] for col in range(3) for seg in range(5) for row in range(3)]
-            grid(x+18,y+85,values,15,size,'腹側（左:尾 / 右:頭）')
+            grid(x+18,y+85,values,15,size,'後脚 / 胴体3面 / 前脚')
             gy=y+85+5*size
             grid(x+18,gy,self.world.head,3,size,'頭')
             grid(x+18+5*size,gy,self.world.support_touch[:9],3,size,'後支持')
             grid(x+18+10*size,gy,self.world.support_touch[9:],3,size,'前支持')
             # Two tactile receptors per relative joint; no true angle input.
-            values=[self.world.joint_touch[i*2+j] for j in range(2) for i in range(5)]
-            grid(x+18,y+85+9*size,values,5,size,'関節1〜5（曲げ＋ / −）')
+            values=[self.world.joint_touch[i*2+j] for j in range(2) for i in range(6)]
+            grid(x+18,y+85+9*size,values,6,size,'後XYZ・前XYZ（＋ / −）')
         self.text(x+15,y+height-24,f'HP {self.world.hp:.1f}  空腹 {self.world.hunger:.1f}  被ダメ {self.world.damage_hp:.2f}  摂食回復 {self.world.food_relief:.2f}',9)
 
     def draw_network(self, x, y, width, height):
@@ -326,7 +326,7 @@ class App:
             if i < 4:
                 self.canvas.create_line(cx + 32, y + 126, cx + space - 32, y + 126, arrow='both', fill='#5ca5bc', width=2)
                 self.text(cx + space / 2, y + 109, '4 ch', 9, '#8cacc4', anchor='center')
-            self.text(cx, y + 72, f'節 {i + 1}' + (' / HEAD' if i == 4 else ''), 12, anchor='center')
+            self.text(cx, y + 72, ('後脚','胴体 後','胴体 中','胴体 前','前脚 / 頭')[i], 12, anchor='center')
             self.text(cx, y + 92, f'touch {self.world.controller.features[i][0]:.2f}', 9, '#a6b8cd', anchor='center')
             for k, val in enumerate(state):
                 px, py = cx + (k % 2 - .5) * 32, y + 130 + (k // 2) * 37
@@ -334,13 +334,18 @@ class App:
                 radius = 8 + abs(val) * 5
                 self.canvas.create_oval(px - radius, py - radius, px + radius, py + radius, fill=color, outline='')
                 self.text(px, py, f'{val:+.1f}', 8, '#10202a', anchor='center')
-            self.text(cx, y + 201, f'目標 {math.degrees(self.world.targets[i]):+.1f}°', 11, anchor='center')
-            support=f' / 支持 {self.world.mechanics.grips[0 if i==0 else 1]:.2f}' if i in (0,4) else ''
-            self.text(cx, y + 224, f'実角 {math.degrees(self.world.angles[i]):+.1f}°'+support, 10, '#9aacc4', anchor='center')
+            if i in (0,4):
+                k=0 if i==0 else 3
+                target='/'.join(f'{math.degrees(v):+.0f}' for v in self.world.targets[k:k+3])
+                actual='/'.join(f'{math.degrees(v):+.0f}' for v in self.world.angles[k:k+3])
+                self.text(cx,y+198,'XYZ目標 '+target+'°',10,anchor='center')
+                self.text(cx,y+218,'実角 '+actual+'°',10,anchor='center')
+                self.text(cx,y+237,f'支持 {self.world.mechanics.grips[0 if i==0 else 1]:.2f}',9,anchor='center')
+            else:self.text(cx,y+211,'感覚・隣接通信',10,anchor='center')
         controller=self.world.controller
-        self.text(x+16,y+height-48,f'個体seed {controller.seed} / 固定重み {len(controller.weights)}個 / hash {controller.fingerprint[:12]} / 学習更新 0回',10)
+        self.text(x+16,y+height-29,f'個体seed {controller.seed} / 固定重み {len(controller.weights)}個 / hash {controller.fingerprint[:12]} / 学習更新 0回',10)
         label='手動テスト中：ネットワーク更新停止' if self.manual.get() else 'h0〜h3は再帰状態（重みの学習ではありません）'
-        self.text(x+16,y+height-25,label,10,'#ffd47d')
+        self.text(x+16,y+height-12,label,10,'#ffd47d')
 
     def update(self):
         now = time.perf_counter()

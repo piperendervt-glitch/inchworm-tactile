@@ -59,16 +59,15 @@
     }
   ],
   "physics": {
-    "strategy": "active_grip",
+    "strategy": "rigid_contact",
     "mass_kg": 0.15,
     "gravity": 9.81,
-    "kinetic_ratio": 0.8,
-    "mu_released": 0.08,
+    "mu_released": 0.35,
     "mu_gripped": 1.2,
-    "max_drive_n": 0.6,
     "joint_torque_nm": 0.035,
     "joint_rate_rad_s": 1.8,
-    "pad_height_m": 0.006
+    "grip_force_n": 2.0,
+    "substeps": 8
   },
   "spawn": {
     "x": 0.0,
