@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 class App:
-    def __init__(self, config=None, weights=None):
+    def __init__(self, config=None, weights=None, use3d=True):
         self.config = config or read_config()
         self.weights = weights
         self.world = World(self.config, weights)
@@ -24,6 +24,10 @@ class App:
         self.window.geometry('1440x930')
         self.window.minsize(1100, 760)
         self.window.configure(bg='#101621')
+        self.renderer = None
+        self.scene_rect = None
+        self.drag_start = None
+        self.photo3d = None
         self.running = True
         self.recorder = None
         self.last_time = time.perf_counter()
@@ -78,6 +82,11 @@ class App:
         ttk.Label(support_bar, text='reference = 固定動作 / active_grip = 追加2出力の実験').pack(side='left', padx=8)
         self.canvas = tk.Canvas(self.window, bg='#101621', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
+        self.canvas.bind('<ButtonPress-1>', self.begin_orbit)
+        self.canvas.bind('<B1-Motion>', self.orbit)
+        self.canvas.bind('<ButtonRelease-1>', lambda e: setattr(self,'drag_start',None))
+        self.canvas.bind('<MouseWheel>', self.zoom)
+        self.canvas.bind('<Double-Button-1>', lambda e: self.renderer.home() if self.renderer and self.in_scene(e) else None)
         angles = ttk.Frame(self.window, padding=5)
         angles.pack(fill='x')
         self.sliders = []
@@ -93,6 +102,15 @@ class App:
         self.window.bind('<space>', lambda e: self.pause())
         self.window.bind('<Tab>', self.cycle_view)
         self.window.protocol('WM_DELETE_WINDOW', self.close)
+        if use3d:
+            try:
+                from renderer3d import Renderer3D
+                self.renderer = Renderer3D()
+            except Exception as error:
+                from tkinter import messagebox
+                messagebox.showerror('3D表示を起動できません', str(error)+'\nrun.batで起動してください。旧表示は python app.py --legacy です。')
+                self.window.destroy()
+                raise
         self.update()
 
     def cycle_view(self, event=None):
@@ -151,7 +169,42 @@ class App:
         self.text(x + 16, y + 12, title, 14, '#66e0c2')
         self.text(x + 16, y + 39, subtitle, 10, '#9aacc4')
 
-    def draw_scene(self, x, y, width, height):
+    def in_scene(self, event):
+        if not self.scene_rect or self.mode.get() == '触覚グリッド':
+            return False
+        x,y,w,h=self.scene_rect
+        return x<=event.x<=x+w and y<=event.y<=y+h
+
+    def begin_orbit(self,event):
+        if self.renderer and self.in_scene(event):self.drag_start=(event.x,event.y)
+
+    def orbit(self,event):
+        if self.renderer and self.drag_start:
+            self.renderer.orbit(event.x-self.drag_start[0],event.y-self.drag_start[1])
+            self.drag_start=(event.x,event.y)
+
+    def zoom(self,event):
+        if self.renderer and self.in_scene(event):self.renderer.zoom(event.delta/120)
+
+    def draw_scene(self,x,y,width,height):
+        if not self.renderer:
+            return self.draw_legacy_scene(x,y,width,height)
+        from PIL import Image, ImageTk
+        self.panel(x,y,width,height,'01 / WORLD · リアルタイム3D','ドラッグ: 回転 / ホイール: ズーム / ダブルクリック: 視点リセット')
+        image_width=max(1,int(width-2));image_height=max(1,int(height-65))
+        self.scene_rect=(x+1,y+62,image_width,image_height)
+        self.renderer.base.camLens.setAspectRatio(image_width/image_height)
+        frame=self.renderer.render(self.world,self.follow.get(),self.trail)
+        self.photo3d=ImageTk.PhotoImage(frame.resize((image_width,image_height),Image.Resampling.BILINEAR),master=self.window)
+        self.canvas.create_image(x+1,y+62,image=self.photo3d,anchor='nw')
+        m=self.world.mechanics
+        cx=(self.world.nodes[0][0]+self.world.nodes[-1][0])/2
+        self.canvas.create_rectangle(x+10,y+70,x+min(width-10,525),y+137,fill='#182231',outline='')
+        self.text(x+18,y+74,f'正味X {(cx-.135)*1000:+.1f} mm / {m.reason}',11,'#ffd47d')
+        for i,name in enumerate(('後足','前足')):
+            self.text(x+18,y+96+i*18,f'{name} {m.states[i]} · 荷重 {m.loads[i]:.3f} N · 滑り {m.slip[i]*1000:+.2f} mm/frame',9)
+
+    def draw_legacy_scene(self, x, y, width, height):
         self.panel(x, y, width, height, '01 / WORLD · 観察者専用CG', '前後2点支持 / 相対関節5軸 / 接触・力・滑りは観察専用')
         scale = min(width / .95, (height - 100) / .48)
         center = self.world.x + .19 if self.follow.get() else .19
@@ -287,6 +340,8 @@ class App:
     def close(self):
         if self.recorder:
             self.recorder.close()
+        if self.renderer:
+            self.renderer.close()
         self.window.destroy()
 
 
@@ -294,9 +349,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config')
     parser.add_argument('--weights')
+    parser.add_argument('--legacy',action='store_true',help='Use the previous Tk pseudo-3D renderer')
     args = parser.parse_args()
     checkpoint = json.loads(Path(args.weights).read_text()) if args.weights else None
     if checkpoint and checkpoint.get('controller_version') != 2:
         parser.error('Checkpoint controller_version must be 2; retrain old weights.')
     weights = checkpoint['weights'] if checkpoint else None
-    App(read_config(args.config), weights).window.mainloop()
+    App(read_config(args.config), weights, use3d=not args.legacy).window.mainloop()
