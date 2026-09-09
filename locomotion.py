@@ -1,15 +1,16 @@
 """Bullet rigid-body contact dynamics. No prescribed locomotion or pose rollback."""
 import math
 from body_limits import ANGLE_LIMITS
+from body_geometry import VERTICES, APOTHEM
 from panda3d.core import Vec3, Point3, NodePath, TransformState, Quat
 from panda3d.bullet import (BulletWorld, BulletRigidBodyNode, BulletBoxShape,
-    BulletCapsuleShape, XUp, BulletSphereShape, BulletPlaneShape, BulletCylinderShape, BulletGenericConstraint)
+    BulletConvexHullShape, XUp, BulletSphereShape, BulletPlaneShape, BulletCylinderShape, BulletGenericConstraint)
 
 
 class RigidMechanics:
     def __init__(self, settings=None, spawn=None, objects=()):
         self.settings=dict(strategy='rigid_contact',mass_kg=.15,gravity=9.81,
-            mu_released=.35,mu_gripped=1.2,joint_torque_nm=.035,
+            mu_released=1.,mu_gripped=1.8,joint_torque_nm=.035,
             joint_rate_rad_s=1.8,grip_force_n=2.,substeps=8)
         self.settings.update(settings or {})
         for k in ('mass_kg','gravity','joint_torque_nm','joint_rate_rad_s','grip_force_n'):
@@ -32,7 +33,9 @@ class RigidMechanics:
         def pos(x,y,z):return origin+q.xform(Vec3(x,y,z))
         self.segments=[];self.joints=[]
         for i in range(3):
-            shape=BulletCapsuleShape(.018,.054,XUp)
+            shape=BulletConvexHullShape()
+            for vertex in VERTICES:shape.addPoint(Vec3(*vertex))
+            shape.setMargin(.0005)
             self.segments.append(self.make(('tail','middle','head')[i],self.settings['mass_kg']/3,
                 shape,pos(.045+i*.09,0,.019),q))
         self.body=self.segments[1]
@@ -57,7 +60,7 @@ class RigidMechanics:
 
     def make(self,name,mass,shape,pos,quat=None):
         node=BulletRigidBodyNode(name);node.setMass(mass);node.addShape(shape)
-        node.setFriction(.6);node.setRestitution(0.)
+        node.setFriction(self.settings['mu_released'] if mass>0 else 1.);node.setRestitution(0.)
         node.setLinearDamping(.08);node.setAngularDamping(.15)
         node.setDeactivationEnabled(False)
         path=self.root.attachNewNode(node);path.setPos(pos)
@@ -78,7 +81,7 @@ class RigidMechanics:
     def geometry(self):
         return [self.point(self.segments[0],(-.045,0,0))]+[self.point(p,(.045,0,0)) for p in self.segments]
     def surface_points(self):
-        return [self.point(p,((row-1)*.015,(col-1)*.012,-math.sqrt(.018**2-((col-1)*.012)**2)))
+        return [self.point(p,((row-1)*.015,(col-1)*.009,-APOTHEM))
             for p in self.segments for row in range(3) for col in range(3)]
 
     def contacts(self,leg):

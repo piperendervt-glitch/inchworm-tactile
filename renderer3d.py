@@ -1,5 +1,6 @@
 """Observer-only GPU 3D renderer. No control or physics updates occur here."""
 import math
+from body_geometry import faces as hex_faces
 from PIL import Image
 from panda3d.core import (loadPrcFileData, GeomVertexData, GeomVertexFormat,
     GeomVertexWriter, Geom, GeomTriangles, GeomNode, NodePath, AmbientLight,
@@ -76,7 +77,7 @@ class Renderer3D:
         self.width,self.height=width,height
         self.base.camLens.setAspectRatio(width/height)
         self.root=self.base.render.attachNewNode('observer-world')
-        self.cylinder=cylinder();self.sphere=sphere();self.box=box()
+        self.cylinder=cylinder();self.sphere=sphere();self.box=box();self.hex_prism=mesh('hex-prism',hex_faces())
         self.yaw=-65.;self.elevation=32.;self.distance=.85
         self.target=Vec3(.22,0,.015)
         ambient=AmbientLight('ambient');ambient.setColor((.43,.46,.52,1))
@@ -98,7 +99,7 @@ class Renderer3D:
         self.grid=self.root.attachNewNode(lines.create());self.grid.setLightOff();self.grid.setShaderOff()
         self.links=[];self.joints=[];self.pads=[];self.loads=[]
         for i in range(6):
-            segment=self.cylinder.copyTo(self.root);segment.setColor(.16,.70,.58,1)
+            segment=self.hex_prism.copyTo(self.root);segment.setColor(.16,.70,.58,1)
             self.links.append(segment)
         for i in range(7):
             joint=self.sphere.copyTo(self.root);joint.setColor(.73,.90,.86,1);joint.setScale(.009)
@@ -145,19 +146,13 @@ class Renderer3D:
         self.update_objects(world.objects)
         nodes=world.nodes
         m=world.mechanics
-        # Three capsule bodies: a cylinder and two hemispherical ends each.
-        from panda3d.core import Quat
-        along_x=Quat();along_x.setFromAxisAngle(90,Vec3(0,1,0))
         for i,part in enumerate(m.segments):
             segment=self.links[i]
-            segment.setPos(*m.point(part,(-.027,0,0)))
-            segment.setQuat(along_x*part.getQuat());segment.setScale(.018,.018,.054)
-            color=(.95,.72,.29,1) if i==2 else (.16,.70,.58,1)
-            segment.setColor(*color)
-            for j,x in enumerate((-.027,.027)):
-                cap=self.joints[2*i+j];cap.setPos(*m.point(part,(x,0,0)));cap.setScale(.018);cap.setColor(*color)
+            segment.setPos(part.getPos());segment.setQuat(part.getQuat());segment.setScale(1)
+            segment.setColor(*((.95,.72,.29,1) if i==2 else (.16,.70,.58,1)))
         for link in self.links[3:]:link.hide()
-        self.joints[6].hide();self.head.hide()
+        for joint in self.joints:joint.hide()
+        self.head.hide()
         for i,point in enumerate(m.feet()):
             self.pads[i].hide()  # No legs, feet, or standing platform.
             self.loads[i].setPos(point[0],point[1],point[2]+.04)
