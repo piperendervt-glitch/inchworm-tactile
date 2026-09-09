@@ -3,12 +3,12 @@
 Six equal rigid links, five relative pitch joints, two compliant level feet.
 Pitch/height of the floating body are solved from the two floor supports.
 Normal loads follow static force and moment balance. Coulomb stick/slip is
-directional, load-based or controlled by optional explicit gripper commands.
+controlled only by independent continuous gripper commands.
 """
 import math
 
-DEFAULT_PHYSICS = dict(strategy='directional', mass_kg=.15, gravity=9.81,
-    mu_forward=.16, mu_backward=1.1, mu_isotropic=.5, kinetic_ratio=.8,
+DEFAULT_PHYSICS = dict(strategy='active_grip', mass_kg=.15, gravity=9.81,
+    kinetic_ratio=.8,
     mu_released=.08, mu_gripped=1.2, max_drive_n=.6,
     joint_torque_nm=.035, joint_rate_rad_s=1.8, pad_height_m=.006)
 
@@ -35,29 +35,16 @@ def normal_loads(points, weight):
     return [weight-front, front]
 
 
-def reference_angles(t, strategy='directional'):
-    phase = 2*math.pi*t/3.
-    bend = .30*(1-math.cos(phase))
-    # Bias the arch towards the intended support during each half-cycle.
-    bias = .65*math.sin(phase) if strategy == 'load_transfer' else 0.
-    return [-bend*(1+bias*(i-2)/2) for i in range(5)] + [0.]
-
-
-def reference_grips(t):
-    derivative = math.sin(2*math.pi*t/3.)
-    return [derivative <= .12, derivative >= -.12]
-
-
 class PadMechanics:
     def __init__(self, settings=None):
         self.settings = DEFAULT_PHYSICS | (settings or {})
         p = self.settings
-        if p['strategy'] not in ('directional', 'load_transfer', 'active_grip'):
-            raise ValueError('Unknown support strategy')
+        if p['strategy'] != 'active_grip':
+            raise ValueError('Newborn mode requires independently controlled active_grip supports')
         for key in ('mass_kg','gravity','max_drive_n','joint_torque_nm','joint_rate_rad_s'):
             if not math.isfinite(p[key]) or p[key] <= 0:
                 raise ValueError(f'{key} must be positive and finite')
-        for key in ('mu_forward','mu_backward','mu_isotropic','mu_released','mu_gripped','pad_height_m'):
+        for key in ('mu_released','mu_gripped','pad_height_m'):
             if not math.isfinite(p[key]) or p[key] < 0:
                 raise ValueError(f'{key} must be nonnegative and finite')
         if not 0 < p['kinetic_ratio'] <= 1:
@@ -75,6 +62,8 @@ class PadMechanics:
         p = self.settings
         before, after = shape(old[:5]), shape(candidate[:5])
         self.loads = normal_loads(after, p['mass_kg']*p['gravity'])
+        if len(grips)!=2 or not all(math.isfinite(g) and 0<=g<=1 for g in grips):
+            raise ValueError('Two support actuator commands in [0,1] required')
         self.grips = list(grips)
         self.slip = [0.,0.]
         self.forces = [0.,0.]
@@ -86,13 +75,7 @@ class PadMechanics:
             self.capacity = [0.,0.]
             return old[:], 0.
         delta = after[-1][0]-before[-1][0]
-        directions = [-1 if delta>0 else 1, 1 if delta>0 else -1]
-        if p['strategy']=='directional':
-            mus = [p['mu_forward'] if d>0 else p['mu_backward'] for d in directions]
-        elif p['strategy']=='active_grip':
-            mus = [p['mu_gripped'] if grip else p['mu_released'] for grip in grips]
-        else:
-            mus = [p['mu_isotropic']]*2
+        mus=[p['mu_released']+(p['mu_gripped']-p['mu_released'])*grip for grip in grips]
         self.capacity = [mu*n for mu,n in zip(mus,self.loads)]
         if abs(delta)<1e-10:
             self.reason = 'rest'

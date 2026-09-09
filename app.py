@@ -15,14 +15,13 @@ ROOT = Path(__file__).resolve().parent
 
 
 class App:
-    def __init__(self, config=None, weights=None, use3d=True):
+    def __init__(self, config=None, use3d=True):
         self.config = copy.deepcopy(config if config is not None else read_config())
         saved_layout=ROOT/'user-layout.json'
         if config is None and saved_layout.exists():
             self.config['layout']=json.loads(saved_layout.read_text(encoding='utf-8'))
         self.layout_editor=None
-        self.weights = weights
-        self.world = World(self.config, weights)
+        self.world = World(self.config)
         self.window = tk.Tk()
         self.window.title('Inchworm Tactile | 非視覚・分散AIラボ')
         self.window.geometry('1440x930')
@@ -44,7 +43,7 @@ class App:
         ttk.Button(bar, text='リセット', command=self.reset).pack(side='left', padx=4)
         self.record_button = ttk.Button(bar, text='記録開始', command=self.record)
         self.record_button.pack(side='left', padx=4)
-        ttk.Button(bar, text='重みを読む', command=self.load_weights).pack(side='left', padx=4)
+        ttk.Label(bar,text='未学習 / 学習OFF').pack(side='left',padx=5)
         self.mode = tk.StringVar(value='両方')
         ttk.Combobox(bar, textvariable=self.mode, values=['両方', '本体ビュー', '触覚グリッド'], state='readonly', width=12).pack(side='left', padx=4)
         ttk.Button(bar,text='配置設定',command=self.open_layout).pack(side='left',padx=5)
@@ -68,23 +67,19 @@ class App:
         selector.bind('<<ComboboxSelected>>', lambda e: self.reset())
         support_bar = ttk.Frame(self.window, padding=5)
         support_bar.pack(fill='x')
-        ttk.Label(support_bar, text='支持方式').pack(side='left')
-        self.support = tk.StringVar(value=self.config.get('physics',{}).get('strategy','directional'))
-        support_selector = ttk.Combobox(support_bar, textvariable=self.support, values=['directional','load_transfer','active_grip'], state='readonly', width=16)
-        support_selector.pack(side='left', padx=5)
-        support_selector.bind('<<ComboboxSelected>>', lambda e: self.reset())
-        ttk.Label(support_bar, text='制御').pack(side='left')
-        self.policy = tk.StringVar(value='ai')
-        policy_selector = ttk.Combobox(support_bar, textvariable=self.policy, values=['ai','reference'], state='readonly', width=12)
-        policy_selector.pack(side='left', padx=5)
-        policy_selector.bind('<<ComboboxSelected>>', lambda e: self.reset())
+        ttk.Label(support_bar,text='新生個体 seed').pack(side='left')
+        self.birth_seed=tk.StringVar(value=str(self.config.get('controller',{}).get('seed',17)))
+        ttk.Entry(support_bar,textvariable=self.birth_seed,width=12).pack(side='left',padx=5)
+        ttk.Button(support_bar,text='別の新生個体',command=self.new_birth).pack(side='left',padx=5)
+        ttk.Label(support_bar,text='支持: 前後独立アクチュエータ').pack(side='left',padx=5)
         self.follow = tk.BooleanVar(value=True)
         ttk.Checkbutton(support_bar, text='追従カメラ（OFFで固定）', variable=self.follow).pack(side='left', padx=5)
-        self.rear_grip = tk.BooleanVar(value=False)
-        self.front_grip = tk.BooleanVar(value=False)
-        ttk.Checkbutton(support_bar, text='手動: 後グリップ', variable=self.rear_grip).pack(side='left')
-        ttk.Checkbutton(support_bar, text='前グリップ', variable=self.front_grip).pack(side='left')
-        ttk.Label(support_bar, text='reference = 固定動作 / active_grip = 追加2出力の実験').pack(side='left', padx=8)
+        self.rear_grip=tk.DoubleVar(value=0.)
+        self.front_grip=tk.DoubleVar(value=0.)
+        ttk.Label(support_bar,text='手動: 後支持').pack(side='left')
+        ttk.Scale(support_bar,variable=self.rear_grip,from_=0,to=1,length=75).pack(side='left')
+        ttk.Label(support_bar,text='前支持').pack(side='left')
+        ttk.Scale(support_bar,variable=self.front_grip,from_=0,to=1,length=75).pack(side='left')
         self.canvas = tk.Canvas(self.window, bg='#101621', highlightthickness=0)
         self.canvas.pack(fill='both', expand=True)
         self.canvas.bind('<ButtonPress-1>', self.begin_orbit)
@@ -137,7 +132,7 @@ class App:
     def apply_layout(self,layout):
         config=copy.deepcopy(self.config)
         config['layout']=copy.deepcopy(layout)
-        World(config,self.weights)  # Validate before changing the active session.
+        World(config)  # Validate before changing the active session.
         path=ROOT/'user-layout.json'
         temp=path.with_suffix('.json.tmp')
         temp.write_text(json.dumps(layout,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -147,8 +142,6 @@ class App:
         self.reset()
 
     def reset(self):
-        if self.recorder:
-            self.record()
         config = copy.deepcopy(self.config)
         scenario = self.scenario.get()
         if scenario != '標準環境':
@@ -161,8 +154,17 @@ class App:
             hx=spawn.get('x',0.)+.27*math.cos(heading)
             hy=spawn.get('y',0.)+.27*math.sin(heading)
             config['environment'] = [] if scenario == '地面' else [{'kind': kinds[scenario], 'x': hx, 'y': hy, 'radius': .06, 'height': .04 if scenario != '害に接触' else .005}]
-        config.setdefault('physics',{})['strategy'] = self.support.get()
-        self.world = World(config, self.weights)
+        from layout import integer
+        try:seed=integer(self.birth_seed.get(),'個体seed',0,2147483647)
+        except ValueError as error:
+            from tkinter import messagebox
+            messagebox.showerror('個体seed',str(error),parent=self.window)
+            return
+        config.setdefault('controller',{})['seed']=seed
+        self.config.setdefault('controller',{})['seed']=seed
+        world=World(config)
+        if self.recorder:self.record()
+        self.world=world
         if self.renderer:
             from panda3d.core import Vec3
             self.renderer.target=Vec3(*self.world.initial_center)
@@ -179,21 +181,11 @@ class App:
             self.recorder = Recorder(ROOT / 'sessions' / name, self.world)
             self.record_button.configure(text='■ 記録停止')
 
-    def load_weights(self):
-        path = filedialog.askopenfilename(initialdir=ROOT, filetypes=[('JSON', '*.json')])
-        if path:
-            from tkinter import messagebox
-            try:
-                checkpoint = json.loads(Path(path).read_text())
-                if checkpoint.get('controller_version') != 2:
-                    raise ValueError('旧モデルの重みです。v2で再学習してください。')
-                weights = checkpoint['weights']
-                if len(weights) != 8 or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in weights):
-                    raise ValueError('8 finite weights required')
-                self.weights = weights
-                self.reset()
-            except (ValueError, KeyError, OSError) as error:
-                messagebox.showerror('重みを読み込めません', str(error))
+    def new_birth(self):
+        import random
+        self.birth_seed.set(str(random.SystemRandom().randrange(2147483648)))
+        self.manual.set(False)
+        self.reset()
 
     def text(self, x, y, text, size=12, color='#dfe8f3', anchor='nw'):
         self.canvas.create_text(x, y, text=text, font=('Yu Gothic UI', size), fill=color, anchor=anchor)
@@ -294,31 +286,39 @@ class App:
         self.canvas.create_line(*project(*h), *project(h[0] + .035 * math.cos(facing), h[1] + .035 * math.sin(facing), h[2]), fill='#ffd47d', width=6, arrow='last')
         self.text(x + 16, y + height - 30, f'head ({h[0]:+.3f}, {h[1]:+.3f}, {h[2]:+.3f}) m  · 観察・記録のみ', 10)
 
-    def draw_tactile(self, x, y, width, height):
-        self.panel(x, y, width, height, '02 / TACTILE · AIが受け取る輝度', '腹側45セル + 頭部9セル / 15 mm / 30 Hz / センサ遅延あり')
-        cell = min(25, (width - 50) / (7 if self.vertical.get() else 15), (height - 110) / (15 if self.vertical.get() else 8))
-        origin_x, origin_y = x + 20, y + 85
-        gap = 2 if self.gaps.get() else 0
-
-        def draw_cell(cx, cy, val):
-            level = round(255 * min(1, val * self.display_gain.get()) ** (1 / self.gamma.get()))
-            color = f'#{level:02x}{level:02x}{level:02x}'
-            self.canvas.create_rectangle(cx, cy, cx + cell - gap, cy + cell - gap, fill=color, outline='')
-
-        for i, val in enumerate(self.world.belly):
-            seg, rem = divmod(i, 9)
-            row, col = divmod(rem, 3)
-            gx, gy = (col, seg * 3 + row) if self.vertical.get() else (seg * 3 + row, col)
-            draw_cell(origin_x + gx * cell, origin_y + gy * cell, val)
-        hx = origin_x + 4 * cell if self.vertical.get() else origin_x
-        hy = origin_y if self.vertical.get() else origin_y + 5 * cell
-        self.text(hx, hy - 22, 'HEAD', 10, '#ffd47d')
-        for i, val in enumerate(self.world.head):
-            draw_cell(hx + (i % 3) * cell, hy + (i // 3) * cell, val)
-        self.text(x + 18, y + height - 28, '黒→白 = 低→高輝度（圧力そのものではない）', 10)
+    def draw_tactile(self,x,y,width,height):
+        self.panel(x,y,width,height,'02 / INPUT · 触覚と身体内部の状態','腹45 + 頭9 + 曲げ10 + 支持18セル / 輝度 / 30 Hz')
+        gap=2 if self.gaps.get() else 0
+        def cell(px,py,value,size):
+            level=round(255*min(1,value*self.display_gain.get())**(1/self.gamma.get()))
+            color=f'#{level:02x}{level:02x}{level:02x}'
+            self.canvas.create_rectangle(px,py,px+size-gap,py+size-gap,fill=color,outline='')
+        def grid(px,py,values,cols,size,title):
+            self.text(px,py-20,title,9,'#ffd47d')
+            for i,value in enumerate(values):cell(px+(i%cols)*size,py+(i//cols)*size,value,size)
+        if self.vertical.get():
+            size=min(19,(height-110)/15)
+            grid(x+15,y+85,self.world.belly,3,size,'腹側（尾→頭）')
+            sx=x+90;small=min(18,(width-110)/11)
+            grid(sx,y+85,self.world.head,3,small,'頭')
+            grid(sx+4*small,y+85,self.world.support_touch[:9],3,small,'後支持')
+            grid(sx+8*small,y+85,self.world.support_touch[9:],3,small,'前支持')
+            grid(sx,y+180,self.world.joint_touch,2,small,'関節: ＋ / −')
+        else:
+            size=min(24,(width-40)/15,(height-115)/11)
+            values=[self.world.belly[seg*9+row*3+col] for col in range(3) for seg in range(5) for row in range(3)]
+            grid(x+18,y+85,values,15,size,'腹側（左:尾 / 右:頭）')
+            gy=y+85+5*size
+            grid(x+18,gy,self.world.head,3,size,'頭')
+            grid(x+18+5*size,gy,self.world.support_touch[:9],3,size,'後支持')
+            grid(x+18+10*size,gy,self.world.support_touch[9:],3,size,'前支持')
+            # Two tactile receptors per relative joint; no true angle input.
+            values=[self.world.joint_touch[i*2+j] for j in range(2) for i in range(5)]
+            grid(x+18,y+85+9*size,values,5,size,'関節1〜5（曲げ＋ / −）')
+        self.text(x+15,y+height-24,f'HP {self.world.hp:.1f}  空腹 {self.world.hunger:.1f}  被ダメ {self.world.damage_hp:.2f}  摂食回復 {self.world.food_relief:.2f}',9)
 
     def draw_network(self, x, y, width, height):
-        self.panel(x, y, width, height, '03 / LOCAL NCA · 実際の状態・通信・目標角', '共有局所則 / 隣接節のみ通信 / 4チャネル / 初期状態は周期運動の事前設計あり')
+        self.panel(x, y, width, height, '03 / NEWBORN · 未学習の局所ネットワーク', 'ランダム初期重みは固定 / 内部状態4 / 隣接通信4 / 周期則なし / 学習OFF')
         space = (width - 100) / 5
         states = self.world.controller.state
         for i, state in enumerate(states):
@@ -335,11 +335,12 @@ class App:
                 self.canvas.create_oval(px - radius, py - radius, px + radius, py + radius, fill=color, outline='')
                 self.text(px, py, f'{val:+.1f}', 8, '#10202a', anchor='center')
             self.text(cx, y + 201, f'目標 {math.degrees(self.world.targets[i]):+.1f}°', 11, anchor='center')
-            self.text(cx, y + 224, f'実角 {math.degrees(self.world.angles[i]):+.1f}°', 10, '#9aacc4', anchor='center')
-        weights = '  '.join(f'{v:+.2f}' for v in self.world.controller.weights)
-        self.text(x + 16, y + height - 48, '共有パラメータ [速度, 結合, 振幅, 接触, 粗さ, 記憶, 左右, 前面]  ' + weights, 10)
-        label = '手動/固定動作：ネットワーク更新停止' if self.manual.get() or self.policy.get() == 'reference' else f'頭部yaw目標 {math.degrees(self.world.targets[5]):+.1f}°'
-        self.text(x + 16, y + height - 25, '各節の4状態: cos位相 / sin位相 / 接触記憶 / 旋回記憶  · ' + label, 10, '#ffd47d')
+            support=f' / 支持 {self.world.mechanics.grips[0 if i==0 else 1]:.2f}' if i in (0,4) else ''
+            self.text(cx, y + 224, f'実角 {math.degrees(self.world.angles[i]):+.1f}°'+support, 10, '#9aacc4', anchor='center')
+        controller=self.world.controller
+        self.text(x+16,y+height-48,f'個体seed {controller.seed} / 固定重み {len(controller.weights)}個 / hash {controller.fingerprint[:12]} / 学習更新 0回',10)
+        label='手動テスト中：ネットワーク更新停止' if self.manual.get() else 'h0〜h3は再帰状態（重みの学習ではありません）'
+        self.text(x+16,y+height-25,label,10,'#ffd47d')
 
     def update(self):
         now = time.perf_counter()
@@ -348,7 +349,7 @@ class App:
         if self.running and self.world.hp > 0:
             self.accumulator += elapsed * self.speed.get()
             while self.accumulator >= DT:
-                row = self.world.step([v.get() for v in self.sliders] if self.manual.get() else None, mode=self.policy.get(), manual_grips=(self.rear_grip.get(),self.front_grip.get()))
+                row = self.world.step([v.get() for v in self.sliders] if self.manual.get() else None, manual_grips=(self.rear_grip.get(),self.front_grip.get()))
                 if self.recorder:
                     self.recorder.write(row)
                 self.trail.append((self.world.x, self.world.y))
@@ -368,7 +369,7 @@ class App:
                 self.draw_tactile(12, 8, w - 24, top_h)
             self.draw_network(12, top_h + 20, w - 24, 290)
         state = '終了 / HP 0' if self.world.hp <= 0 else ('実行中' if self.running else '一時停止')
-        self.status.set(f'{state}  |  t={self.world.tick * DT:.2f}s  |  HP {self.world.hp:.1f}  |  {"記録中" if self.recorder else "未記録"}  |  Space: 停止  Tab: 表示切替  |  センサ設定: config.json → 再起動')
+        self.status.set(f'{state}  |  t={self.world.tick * DT:.2f}s  |  HP {self.world.hp:.1f} / 空腹 {self.world.hunger:.1f} / 被ダメ {self.world.damage_hp:.2f}  |  {"記録中" if self.recorder else "未記録"}  |  Space: 停止  Tab: 表示切替  |  未学習個体 / 学習OFF')
         self.window.after(33, self.update)
 
     def close(self):
@@ -383,13 +384,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config')
     parser.add_argument('--layout',help='Load a saved layout JSON, overriding the saved GUI layout')
-    parser.add_argument('--weights')
+    parser.add_argument('--birth-seed',type=int,help='Seed for frozen untrained network initialization')
     parser.add_argument('--legacy',action='store_true',help='Use the previous Tk pseudo-3D renderer')
     args = parser.parse_args()
-    checkpoint = json.loads(Path(args.weights).read_text()) if args.weights else None
-    if checkpoint and checkpoint.get('controller_version') != 2:
-        parser.error('Checkpoint controller_version must be 2; retrain old weights.')
-    weights = checkpoint['weights'] if checkpoint else None
     config=read_config(args.config) if args.config or args.layout else None
     if args.layout:config['layout']=json.loads(Path(args.layout).read_text(encoding='utf-8'))
-    App(config, weights, use3d=not args.legacy).window.mainloop()
+    if args.birth_seed is not None:
+        if config is None:
+            config=read_config()
+            saved=ROOT/'user-layout.json'
+            if saved.exists():config['layout']=json.loads(saved.read_text(encoding='utf-8'))
+        config.setdefault('controller',{})['seed']=args.birth_seed
+    App(config, use3d=not args.legacy).window.mainloop()

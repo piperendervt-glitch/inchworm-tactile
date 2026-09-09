@@ -5,7 +5,10 @@
     "gain": 3.0,
     "noise": 0.012,
     "delay_frames": 2,
-    "pitch_m": 0.015
+    "pitch_m": 0.015,
+    "joint_preload": 0.05,
+    "joint_gain": 0.8,
+    "support_load_scale_n": 0.9
   },
   "materials": {
     "ground": {
@@ -56,12 +59,9 @@
     }
   ],
   "physics": {
-    "strategy": "directional",
+    "strategy": "active_grip",
     "mass_kg": 0.15,
     "gravity": 9.81,
-    "mu_forward": 0.16,
-    "mu_backward": 1.1,
-    "mu_isotropic": 0.5,
     "kinetic_ratio": 0.8,
     "mu_released": 0.08,
     "mu_gripped": 1.2,
@@ -74,5 +74,19 @@
     "x": 0.0,
     "y": 0.0,
     "heading_deg": 0.0
+  },
+  "controller": {
+    "seed": 17,
+    "training_enabled": false
+  },
+  "physiology": {
+    "initial_hp": 100.0,
+    "initial_hunger": 20.0,
+    "hunger_per_s": 0.5,
+    "basal_hp_per_s": 0.2,
+    "starvation_hp_per_s": 2.0,
+    "damage_hp_per_s": 12.0,
+    "food_relief": 40.0,
+    "feeding_seconds": 1.0
   }
 }

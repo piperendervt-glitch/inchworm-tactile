@@ -1,0 +1,161 @@
+{
+  "controller_version": 3,
+  "training_enabled": false,
+  "training_steps": 0,
+  "requested_seconds": 30.0,
+  "elapsed_seconds": 30.0,
+  "controller_seed": 17,
+  "weights_sha256": "ba7ba5bb441cc17e1b2a99317c0a9308e211f8c0afaed2a0718e0d117a770976",
+  "weights_unchanged": true,
+  "initial_spawn": {
+    "x": 0.0,
+    "y": 0.0,
+    "heading_deg": 0.0
+  },
+  "objects": [
+    {
+      "kind": "food",
+      "x": 0.4,
+      "y": 0.0,
+      "radius": 0.055,
+      "height": 0.04
+    },
+    {
+      "kind": "harm",
+      "x": 0.6,
+      "y": 0.0,
+      "radius": 0.08,
+      "height": 0.005
+    },
+    {
+      "kind": "obstacle",
+      "x": 0.83,
+      "y": 0.01,
+      "radius": 0.07,
+      "height": 0.065
+    },
+    {
+      "kind": "food",
+      "x": 1.04,
+      "y": 0.15,
+      "radius": 0.07,
+      "height": 0.04
+    }
+  ],
+  "displacement_m": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "hp": 94.00000000000546,
+  "hunger": 34.99999999999915,
+  "food_events": 0,
+  "last_damage_hp": 0.0,
+  "target_angles_rad": [
+    0.11579757972637507,
+    0.04973374171322129,
+    0.0459082500154464,
+    0.044697703256905176,
+    0.12681235694373402,
+    0.07647160417668077
+  ],
+  "support_commands": [
+    0.46570368259441236,
+    0.46232949899233927
+  ],
+  "physics_reasons": {
+    "body-ground limit": 900
+  },
+  "config": {
+    "seed": 7,
+    "sensor": {
+      "baseline": 0.12,
+      "gain": 3.0,
+      "noise": 0.012,
+      "delay_frames": 2,
+      "pitch_m": 0.015,
+      "joint_preload": 0.05,
+      "joint_gain": 0.8,
+      "support_load_scale_n": 0.9
+    },
+    "materials": {
+      "ground": {
+        "hardness": 1.0,
+        "roughness": 0.0
+      },
+      "food": {
+        "hardness": 0.22,
+        "roughness": 0.03
+      },
+      "harm": {
+        "hardness": 1.0,
+        "roughness": 0.8
+      },
+      "obstacle": {
+        "hardness": 1.0,
+        "roughness": 0.0
+      }
+    },
+    "environment": [
+      {
+        "kind": "food",
+        "x": 0.4,
+        "y": 0.0,
+        "radius": 0.055,
+        "height": 0.04
+      },
+      {
+        "kind": "harm",
+        "x": 0.6,
+        "y": 0.0,
+        "radius": 0.08,
+        "height": 0.005
+      },
+      {
+        "kind": "obstacle",
+        "x": 0.83,
+        "y": 0.01,
+        "radius": 0.07,
+        "height": 0.065
+      },
+      {
+        "kind": "food",
+        "x": 1.04,
+        "y": 0.15,
+        "radius": 0.07,
+        "height": 0.04
+      }
+    ],
+    "physics": {
+      "strategy": "active_grip",
+      "mass_kg": 0.15,
+      "gravity": 9.81,
+      "kinetic_ratio": 0.8,
+      "mu_released": 0.08,
+      "mu_gripped": 1.2,
+      "max_drive_n": 0.6,
+      "joint_torque_nm": 0.035,
+      "joint_rate_rad_s": 1.8,
+      "pad_height_m": 0.006
+    },
+    "spawn": {
+      "x": 0.0,
+      "y": 0.0,
+      "heading_deg": 0.0
+    },
+    "controller": {
+      "seed": 17,
+      "training_enabled": false
+    },
+    "physiology": {
+      "initial_hp": 100.0,
+      "initial_hunger": 20.0,
+      "hunger_per_s": 0.5,
+      "basal_hp_per_s": 0.2,
+      "starvation_hp_per_s": 2.0,
+      "damage_hp_per_s": 12.0,
+      "food_relief": 40.0,
+      "feeding_seconds": 1.0
+    }
+  }
+}
