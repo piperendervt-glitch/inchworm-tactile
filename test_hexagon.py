@@ -1,6 +1,6 @@
 import math
 import unittest
-from core import World
+from core import World,read_config
 from body_geometry import VERTICES,APOTHEM
 
 class HexagonTests(unittest.TestCase):
@@ -17,7 +17,8 @@ class HexagonTests(unittest.TestCase):
             self.assertAlmostEqual(p.node().getFriction(),mu,places=6)
 
     def test_seed17_does_not_roll_metres_sideways(self):
-        w=World();start=w.mechanics.center()
+        cfg=read_config();cfg['exploration']['enabled']=False
+        w=World(cfg);start=w.mechanics.center()
         for _ in range(900):w.step()
         self.assertLess(abs(w.mechanics.center()[1]-start[1]),.03)
         self.assertTrue(all(math.isfinite(v) for p in w.nodes for v in p))

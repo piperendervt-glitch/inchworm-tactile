@@ -7,6 +7,7 @@ import random
 from pathlib import Path
 from locomotion import RigidMechanics
 from body_limits import ANGLE_LIMITS
+from exploration import MotorExploration
 from newborn import NewbornController, Observation
 from layout import resolve_layout,finite
 
@@ -43,6 +44,8 @@ class World:
             self.objects=copy.deepcopy(self.config['environment'])
         self.initial_spawn=copy.deepcopy(spawn)
         self.controller = NewbornController(self.config.get('controller',{}).get('seed',17))
+        self.exploration=MotorExploration(self.controller.seed,self.config.get('exploration'))
+        self.network_targets=[0.]*6
         self.mechanics = RigidMechanics(self.config.get('physics'), spawn, self.objects)
         self.control_mode = 'newborn'
         self.distance = 0.
@@ -154,7 +157,8 @@ class World:
             self.targets=list(manual)
             grips=list(manual_grips)
         else:
-            self.targets=self.controller.step(observation)
+            self.network_targets=self.controller.step(observation)
+            self.targets=self.exploration.mix(self.network_targets,DT)
             grips=self.controller.grips[:]
         if len(self.targets) != 6 or not all(math.isfinite(v) for v in self.targets):
             raise ValueError('Six finite target angles required')
@@ -169,7 +173,7 @@ class World:
         self.distance+=math.dist(before,self.mechanics.center())
         self.sense()
         self.tick += 1
-        return [self.tick,self.tick*DT]+observation.flatten()+self.targets+self.angles+[self.hp,self.hunger,self.damage_hp,self.food_relief,self.food_events]+list(self.mechanics.head_position())+list(self.mechanics.orientation())+[self.control_mode,self.mechanics.settings['strategy']]+self.mechanics.loads+self.mechanics.slip+self.mechanics.forces+list(grips)+[self.x,self.distance]
+        return [self.tick,self.tick*DT]+observation.flatten()+self.targets+self.angles+[self.hp,self.hunger,self.damage_hp,self.food_relief,self.food_events]+list(self.mechanics.head_position())+list(self.mechanics.orientation())+[self.control_mode,self.mechanics.settings['strategy']]+self.mechanics.loads+self.mechanics.slip+self.mechanics.forces+list(grips)+[self.x,self.distance]+self.network_targets+self.exploration.values
 
 
 
@@ -177,9 +181,9 @@ class Recorder:
     def __init__(self, path, world):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.file = open(path, 'w', newline='', encoding='utf-8')
-        self.file.write('# '+json.dumps({'schema':5,'controller_version':5,'training_enabled':False,'training_steps':0,'controller_seed':world.controller.seed,'weights_sha256':world.controller.fingerprint,'initial_weights':world.controller.weights,'angle_convention':'joint 1 XYZ then joint 2 XYZ radians; three hexagonal prisms lying on floor','body_shape':'tapered_hexagonal_prism','physics':world.mechanics.settings,'physiology':world.physiology,'hz':30,'observation':'pre_action; tactile delayed, internal state from preceding step; all normalized 0..1','state':'post_action','config':world.config,'initial_tick':world.tick,'initial_objects':world.objects,'initial_spawn':world.initial_spawn,'record_start_pose':{'x':world.x,'y':world.y,'heading_rad':world.heading}})+'\n')
+        self.file.write('# '+json.dumps({'schema':6,'controller_version':5,'exploration':world.exploration.settings,'exploration_seed':world.controller.seed,'training_enabled':False,'training_steps':0,'controller_seed':world.controller.seed,'weights_sha256':world.controller.fingerprint,'initial_weights':world.controller.weights,'angle_convention':'joint 1 XYZ then joint 2 XYZ radians; three hexagonal prisms lying on floor','body_shape':'tapered_hexagonal_prism','physics':world.mechanics.settings,'physiology':world.physiology,'hz':30,'observation':'pre_action; tactile delayed, internal state from preceding step; all normalized 0..1','state':'post_action','config':world.config,'initial_tick':world.tick,'initial_objects':world.objects,'initial_spawn':world.initial_spawn,'record_start_pose':{'x':world.x,'y':world.y,'heading_rad':world.heading}})+'\n')
         self.writer=csv.writer(self.file)
-        self.writer.writerow(['tick','time_s']+[f'belly_{i}' for i in range(27)]+[f'head_{i}' for i in range(9)]+[f'joint_touch_{i}' for i in range(12)]+[f'support_touch_{i}' for i in range(18)]+['input_hp','input_damage_hp','input_hunger','input_food_relief']+[f'target_{i}_rad' for i in range(6)]+[f'actual_{i}_rad' for i in range(6)]+['hp','hunger','damage_hp','food_relief','food_events','head_x_m','head_y_m','head_z_m','head_pitch_rad','head_yaw_rad','head_roll_rad','control_mode','support_strategy','rear_load_n','front_load_n','rear_foot_travel_m','front_foot_travel_m','rear_force_n','front_force_n','rear_grip','front_grip','rear_x_m','center_path_m'])
+        self.writer.writerow(['tick','time_s']+[f'belly_{i}' for i in range(27)]+[f'head_{i}' for i in range(9)]+[f'joint_touch_{i}' for i in range(12)]+[f'support_touch_{i}' for i in range(18)]+['input_hp','input_damage_hp','input_hunger','input_food_relief']+[f'target_{i}_rad' for i in range(6)]+[f'actual_{i}_rad' for i in range(6)]+['hp','hunger','damage_hp','food_relief','food_events','head_x_m','head_y_m','head_z_m','head_pitch_rad','head_yaw_rad','head_roll_rad','control_mode','support_strategy','rear_load_n','front_load_n','rear_foot_travel_m','front_foot_travel_m','rear_force_n','front_force_n','rear_grip','front_grip','rear_x_m','center_path_m']+[f'network_target_{i}_rad' for i in range(6)]+[f'exploration_target_{i}_rad' for i in range(6)])
 
     def write(self, row):
         if row is not None:

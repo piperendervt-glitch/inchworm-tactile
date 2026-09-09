@@ -44,7 +44,7 @@ class App:
         ttk.Button(bar, text='リセット', command=self.reset).pack(side='left', padx=4)
         self.record_button = ttk.Button(bar, text='記録開始', command=self.record)
         self.record_button.pack(side='left', padx=4)
-        ttk.Label(bar,text='未学習 / 学習OFF').pack(side='left',padx=5)
+        ttk.Label(bar,text='未学習 / 学習OFF / 運動探索').pack(side='left',padx=5)
         self.mode = tk.StringVar(value='両方')
         ttk.Combobox(bar, textvariable=self.mode, values=['両方', '本体ビュー', '触覚グリッド'], state='readonly', width=12).pack(side='left', padx=4)
         ttk.Button(bar,text='配置設定',command=self.open_layout).pack(side='left',padx=5)
@@ -339,10 +339,17 @@ class App:
                 k=0 if i==0 else 3
                 target='/'.join(f'{math.degrees(v):+.0f}' for v in self.world.targets[k:k+3])
                 actual='/'.join(f'{math.degrees(v):+.0f}' for v in self.world.angles[k:k+3])
-                self.text(cx,y+198,'XYZ目標 '+target+'°',10,anchor='center')
-                self.text(cx,y+218,'実角 '+actual+'°',10,anchor='center')
-                self.text(cx,y+237,f'支持 {self.world.mechanics.grips[0 if i==0 else 1]:.2f}',9,anchor='center')
-            else:self.text(cx,y+211,'感覚・隣接通信',10,anchor='center')
+                network='/'.join(f'{math.degrees(v):+.0f}' for v in self.world.network_targets[k:k+3])
+                explore='/'.join(f'{math.degrees(v):+.0f}' for v in self.world.exploration.values[k:k+3])
+                self.text(cx,y+190,'NN '+network+'°',9,anchor='center')
+                self.text(cx,y+207,'探索 '+explore+'°',9,anchor='center')
+                self.text(cx,y+224,'指令 '+target+'°',10,anchor='center')
+                self.text(cx,y+241,'実角 '+actual+'°',10,anchor='center')
+            else:
+                self.text(cx,y+199,'感覚・隣接通信',10,anchor='center')
+                active=self.world.exploration.settings['enabled'] and not self.manual.get()
+                self.text(cx,y+221,'運動探索 '+('ON' if active else 'OFF / 手動'),10,'#ffd47d',anchor='center')
+                self.text(cx,y+240,f'尾支持 {self.world.mechanics.grips[0]:.2f} / 頭支持 {self.world.mechanics.grips[1]:.2f}',9,anchor='center')
         controller=self.world.controller
         self.text(x+16,y+height-29,f'個体seed {controller.seed} / 固定重み {len(controller.weights)}個 / hash {controller.fingerprint[:12]} / 学習更新 0回',10)
         label='手動テスト中：ネットワーク更新停止' if self.manual.get() else 'h0〜h3は再帰状態（重みの学習ではありません）'

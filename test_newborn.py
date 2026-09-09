@@ -83,7 +83,7 @@ class NewbornTests(unittest.TestCase):
             recorder=Recorder(path,w);recorder.write(w.step());recorder.close()
             with path.open() as file:
                 meta=json.loads(file.readline()[2:]);rows=list(csv.reader(file))
-            self.assertEqual(meta['schema'],5);self.assertFalse(meta['training_enabled'])
+            self.assertEqual(meta['schema'],6);self.assertFalse(meta['training_enabled'])
             self.assertEqual(len(rows[0]),len(rows[1]));self.assertEqual(list(map(float,rows[1][2:72])),obs)
             self.assertAlmostEqual(float(rows[1][rows[0].index('rear_grip')]),w.controller.grips[0])
 

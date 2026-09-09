@@ -1,0 +1,205 @@
+{
+  "controller_version": 5,
+  "training_enabled": false,
+  "training_steps": 0,
+  "exploration": {
+    "enabled": true,
+    "weight": 0.9,
+    "amplitude": 1.0,
+    "min_seconds": 1.5,
+    "max_seconds": 4.0,
+    "max_rate_rad_s": 1.2
+  },
+  "exploration_targets_rad": [
+    0.7327178647269442,
+    -1.315317828226107,
+    1.308067535848516,
+    0.06409405349033348,
+    1.7545746148816344,
+    -1.4458824925451914
+  ],
+  "network_targets_rad": [
+    0.014976835246507966,
+    -0.0009270736815387843,
+    0.004268275476793632,
+    0.02230676904910426,
+    -0.07106921409742238,
+    -0.054144574806524806
+  ],
+  "requested_seconds": 30.0,
+  "elapsed_seconds": 30.0,
+  "controller_seed": 17,
+  "weights_sha256": "d52a3abf4dac9dbe639303c0c8e028bd56fd8a5dcf90b41ae1a931ca258fa46b",
+  "weights_unchanged": true,
+  "initial_spawn": {
+    "x": 0.0,
+    "y": 0.0,
+    "heading_deg": 0.0
+  },
+  "objects": [
+    {
+      "kind": "food",
+      "x": 0.4,
+      "y": 0.0,
+      "radius": 0.055,
+      "height": 0.04
+    },
+    {
+      "kind": "harm",
+      "x": 0.6,
+      "y": 0.0,
+      "radius": 0.08,
+      "height": 0.005
+    },
+    {
+      "kind": "obstacle",
+      "x": 0.83,
+      "y": 0.01,
+      "radius": 0.07,
+      "height": 0.065
+    },
+    {
+      "kind": "food",
+      "x": 1.04,
+      "y": 0.15,
+      "radius": 0.07,
+      "height": 0.04
+    }
+  ],
+  "displacement_m": [
+    0.03124174475669861,
+    -0.14710713922977448,
+    0.000717509537935257
+  ],
+  "hp": 94.00000000000546,
+  "hunger": 34.99999999999915,
+  "food_events": 0,
+  "last_damage_hp": 0.0,
+  "actual_angles_rad": [
+    0.6329367160797119,
+    -1.170107126235962,
+    1.147452473640442,
+    0.0654861107468605,
+    1.5684442520141602,
+    -1.273490071296692
+  ],
+  "body_center_m": [
+    0.16624175012111664,
+    -0.14710713922977448,
+    0.019717508926987648
+  ],
+  "target_angles_rad": [
+    0.6609437617789007,
+    -1.1838787527716503,
+    1.1776876098113438,
+    0.05991532504621056,
+    1.5720102319837286,
+    -1.3067087007713247
+  ],
+  "support_commands": [
+    0.026754978981379678,
+    0.02308371391432291
+  ],
+  "physics_reasons": {
+    "rigid contact": 900
+  },
+  "config": {
+    "seed": 7,
+    "sensor": {
+      "baseline": 0.12,
+      "gain": 3.0,
+      "noise": 0.012,
+      "delay_frames": 2,
+      "pitch_m": 0.015,
+      "joint_preload": 0.05,
+      "joint_gain": 0.8,
+      "support_load_scale_n": 0.9
+    },
+    "materials": {
+      "ground": {
+        "hardness": 1.0,
+        "roughness": 0.0
+      },
+      "food": {
+        "hardness": 0.22,
+        "roughness": 0.03
+      },
+      "harm": {
+        "hardness": 1.0,
+        "roughness": 0.8
+      },
+      "obstacle": {
+        "hardness": 1.0,
+        "roughness": 0.0
+      }
+    },
+    "environment": [
+      {
+        "kind": "food",
+        "x": 0.4,
+        "y": 0.0,
+        "radius": 0.055,
+        "height": 0.04
+      },
+      {
+        "kind": "harm",
+        "x": 0.6,
+        "y": 0.0,
+        "radius": 0.08,
+        "height": 0.005
+      },
+      {
+        "kind": "obstacle",
+        "x": 0.83,
+        "y": 0.01,
+        "radius": 0.07,
+        "height": 0.065
+      },
+      {
+        "kind": "food",
+        "x": 1.04,
+        "y": 0.15,
+        "radius": 0.07,
+        "height": 0.04
+      }
+    ],
+    "physics": {
+      "strategy": "rigid_contact",
+      "mass_kg": 0.15,
+      "gravity": 9.81,
+      "mu_released": 1.0,
+      "mu_gripped": 1.8,
+      "joint_torque_nm": 0.035,
+      "joint_rate_rad_s": 1.8,
+      "grip_force_n": 2.0,
+      "substeps": 8
+    },
+    "spawn": {
+      "x": 0.0,
+      "y": 0.0,
+      "heading_deg": 0.0
+    },
+    "controller": {
+      "seed": 17,
+      "training_enabled": false
+    },
+    "physiology": {
+      "initial_hp": 100.0,
+      "initial_hunger": 20.0,
+      "hunger_per_s": 0.5,
+      "basal_hp_per_s": 0.2,
+      "starvation_hp_per_s": 2.0,
+      "damage_hp_per_s": 12.0,
+      "food_relief": 40.0,
+      "feeding_seconds": 1.0
+    },
+    "exploration": {
+      "enabled": true,
+      "weight": 0.9,
+      "amplitude": 1.0,
+      "min_seconds": 1.5,
+      "max_seconds": 4.0,
+      "max_rate_rad_s": 1.2
+    }
+  }
+}

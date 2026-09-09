@@ -19,7 +19,7 @@ def observe(config,seconds=30,csv_path=None):
         if recorder:recorder.close()
     center=world.mechanics.center()
     return dict(controller_version=5,training_enabled=False,training_steps=world.controller.training_steps,
-        requested_seconds=seconds,elapsed_seconds=world.tick*DT,controller_seed=world.controller.seed,
+        exploration=world.exploration.settings,exploration_targets_rad=world.exploration.values,network_targets_rad=world.network_targets,requested_seconds=seconds,elapsed_seconds=world.tick*DT,controller_seed=world.controller.seed,
         weights_sha256=world.controller.fingerprint,weights_unchanged=before==world.controller.weights,
         initial_spawn=world.initial_spawn,objects=world.objects,displacement_m=[center[i]-world.initial_center[i] for i in range(3)],
         hp=world.hp,hunger=world.hunger,food_events=world.food_events,last_damage_hp=world.damage_hp,
