@@ -1,5 +1,6 @@
 """Bullet rigid-body contact dynamics. No prescribed locomotion or pose rollback."""
 import math
+from body_limits import ANGLE_LIMITS
 from panda3d.core import Vec3, Point3, NodePath, TransformState, Quat
 from panda3d.bullet import (BulletWorld, BulletRigidBodyNode, BulletBoxShape,
     BulletCapsuleShape, XUp, BulletSphereShape, BulletPlaneShape, BulletCylinderShape, BulletGenericConstraint)
@@ -36,12 +37,16 @@ class RigidMechanics:
                 shape,pos(.045+i*.09,0,.019),q))
         self.body=self.segments[1]
         self.supports=[self.segments[0],self.segments[2]]
+        # Keep the Euler middle axis on twist: bending must cross 90 degrees.
+        frame_rotation=Quat();frame_rotation.setFromAxisAngle(90,Vec3(0,0,1))
         for i in range(2):
             joint=BulletGenericConstraint(self.segments[i].node(),self.segments[i+1].node(),
-                TransformState.makePos(Vec3(.045,0,0)),TransformState.makePos(Vec3(-.045,0,0)),True)
+                TransformState.makePosQuatScale(Vec3(.045,0,0),frame_rotation,Vec3(1)),
+                TransformState.makePosQuatScale(Vec3(-.045,0,0),frame_rotation,Vec3(1)),True)
             for axis in range(3):
                 joint.setLinearLimit(axis,0,0)
-                joint.setAngularLimit(axis,-52,52)
+                limit=math.degrees(ANGLE_LIMITS[(1,0,2)[axis]])
+                joint.setAngularLimit(axis,-limit,limit)
                 motor=joint.getRotationalLimitMotor(axis)
                 motor.setMotorEnabled(True);motor.setMaxMotorForce(self.settings['joint_torque_nm'])
             self.world.attachConstraint(joint,True);self.joints.append(joint)
@@ -69,7 +74,7 @@ class RigidMechanics:
     def orientation(self):
         v=self.body.getQuat().xform(Vec3(1,0,0))
         return (-math.atan2(v.z,math.hypot(v.x,v.y)),self.heading(),math.radians(self.body.getR()))
-    def angles(self):return [j.getAngle(a) for j in self.joints for a in range(3)]
+    def angles(self):return [v for j in self.joints for v in (-j.getAngle(1),j.getAngle(0),j.getAngle(2))]
     def geometry(self):
         return [self.point(self.segments[0],(-.045,0,0))]+[self.point(p,(.045,0,0)) for p in self.segments]
     def surface_points(self):
@@ -88,7 +93,11 @@ class RigidMechanics:
         for _ in range(substeps):
             for i,joint in enumerate(self.joints):
                 for axis in range(3):
-                    error=targets[i*3+axis]-joint.getAngle(axis)
+                    physical_axis=(1,0,2)[axis]
+                    sign=-1 if axis==1 else 1
+                    limit=ANGLE_LIMITS[physical_axis]
+                    target=max(-limit,min(limit,targets[i*3+physical_axis]))
+                    error=sign*target-joint.getAngle(axis)
                     rate=self.settings['joint_rate_rad_s']
                     joint.getRotationalLimitMotor(axis).setTargetVelocity(max(-rate,min(rate,error*12)))
             for i,leg in enumerate(self.supports):

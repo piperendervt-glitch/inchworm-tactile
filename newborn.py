@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import random
+from body_limits import ANGLE_LIMITS
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,7 @@ class NewbornController:
         self.state=new
         for i,hidden in enumerate(new):
             raw=[sum(w*v for w,v in zip(row,hidden)) for row in self.output_weights]
-            self.outputs[i]=[.9*math.tanh(raw[0]),max(0.,math.tanh(raw[1])),.9*math.tanh(raw[2]),.9*math.tanh(raw[3])]
+            self.outputs[i]=[.9*math.tanh(raw[0]),max(0.,math.tanh(raw[1])),ANGLE_LIMITS[1]*math.tanh(raw[2]),ANGLE_LIMITS[2]*math.tanh(raw[3])]
         # Terminal sensory modules drive joint 1/2 XYZ and end-segment support.
         # Middle modules exchange recurrent state; no gait or clock.
         self.grips=[self.outputs[0][1],self.outputs[2][1]]

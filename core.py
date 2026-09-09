@@ -6,6 +6,7 @@ import math
 import random
 from pathlib import Path
 from locomotion import RigidMechanics
+from body_limits import ANGLE_LIMITS
 from newborn import NewbornController, Observation
 from layout import resolve_layout,finite
 
@@ -119,9 +120,9 @@ class World:
                     harmful |= kind=='harm' and load>0
                     support.append(self.brightness(load,kind,x,y))
         joint=[]
-        for angle in self.angles:
+        for angle,limit in zip(self.angles,ANGLE_LIMITS):
             for direction in (1,-1):
-                indentation=self.config['sensor'].get('joint_preload',.05)+self.config['sensor'].get('joint_gain',.8)*max(0.,direction*angle)/.9
+                indentation=self.config['sensor'].get('joint_preload',.05)+self.config['sensor'].get('joint_gain',.8)*max(0.,direction*angle)/limit
                 joint.append(self.brightness(indentation,'ground',0.,0.))
         self.food_relief=0.
         self.hunger=min(100.,self.hunger+self.physiology['hunger_per_s']*DT)
@@ -157,7 +158,7 @@ class World:
             grips=self.controller.grips[:]
         if len(self.targets) != 6 or not all(math.isfinite(v) for v in self.targets):
             raise ValueError('Six finite target angles required')
-        self.targets = [max(-.9,min(.9,v)) for v in self.targets]
+        self.targets = [max(-limit,min(limit,v)) for v,limit in zip(self.targets,ANGLE_LIMITS)]
         before=self.mechanics.center()
         self.mechanics.advance(self.targets,DT,grips)
         self.angles=self.mechanics.angles()

@@ -9,6 +9,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, ttk
 
+from body_limits import ANGLE_LIMITS
 from core import World, Recorder, read_config, DT
 
 ROOT = Path(__file__).resolve().parent
@@ -93,9 +94,9 @@ class App:
         for i in range(6):
             group = ttk.Frame(angles)
             group.pack(side='left', expand=True, fill='x')
-            ttk.Label(group, text=('関節1 X','関節1 Y','関節1 Z','関節2 X','関節2 Y','関節2 Z')[i]).pack()
+            ttk.Label(group, text=('関節1 ひねり','関節1 上下 ±120°','関節1 左右 ±120°','関節2 ひねり','関節2 上下 ±120°','関節2 左右 ±120°')[i]).pack()
             var = tk.DoubleVar(value=0)
-            ttk.Scale(group, variable=var, from_=-.9, to=.9).pack(fill='x', padx=8)
+            ttk.Scale(group, variable=var, from_=-ANGLE_LIMITS[i], to=ANGLE_LIMITS[i]).pack(fill='x', padx=8)
             self.sliders.append(var)
         self.status = tk.StringVar(value='準備完了')
         ttk.Label(self.window, textvariable=self.status, padding=6).pack(fill='x')
