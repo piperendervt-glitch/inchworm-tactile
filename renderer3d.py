@@ -46,6 +46,9 @@ def sphere():
 
 class Renderer3D:
     def __init__(self,width=960,height=480):
+        # Tk owns the Windows message loop. Letting Panda also consume messages
+        # interrupts native title-bar drag/resize operations and snaps them back.
+        loadPrcFileData('', 'disable-message-loop true')
         loadPrcFileData('',f'window-type offscreen\nwin-size {width} {height}\naudio-library-name null\nsync-video false\nnotify-level warning\n')
         from direct.showbase.ShowBase import ShowBase
         self.base=ShowBase(windowType='offscreen')
