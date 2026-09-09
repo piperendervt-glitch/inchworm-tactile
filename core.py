@@ -6,6 +6,7 @@ import math
 import random
 from pathlib import Path
 from locomotion import PadMechanics, shape, reference_angles, reference_grips
+from layout import resolve_layout,finite
 
 DT = 1 / 30
 N = 5
@@ -71,7 +72,12 @@ class World:
     def __init__(self, config=None, weights=None):
         self.config = copy.deepcopy(config or read_config())
         self.rng = random.Random(self.config['seed'])
-        self.objects = copy.deepcopy(self.config['environment'])
+        if 'layout' in self.config:
+            spawn,self.objects=resolve_layout(self.config['layout'])
+        else:
+            spawn={k:finite(self.config.get('spawn',{}).get(k,0.),k) for k in ('x','y','heading_deg')}
+            self.objects=copy.deepcopy(self.config['environment'])
+        self.initial_spawn=copy.deepcopy(spawn)
         self.controller = LocalNCA(weights)
         self.mechanics = PadMechanics(self.config.get('physics'))
         self.control_mode = 'ai'
@@ -79,7 +85,7 @@ class World:
         self.blocked = False
         self.tick = 0
         self.hp = 100.
-        self.x = self.y = self.heading = 0.
+        self.x=spawn['x'];self.y=spawn['y'];self.heading=math.radians(spawn['heading_deg'])
         self.angles = [0.] * 6
         self.targets = [0.] * 6
         self.belly = [self.config['sensor']['baseline']] * 45
@@ -87,6 +93,7 @@ class World:
         self.queue = [(self.belly[:], self.head[:]) for _ in range(self.config['sensor']['delay_frames'])]
         self.food_hold = {}
         self.nodes = self.geometry()
+        self.initial_center=tuple((self.nodes[0][i]+self.nodes[-1][i])/2 for i in range(3))
 
     def geometry(self):
         local = shape(self.angles[:5])
@@ -212,7 +219,7 @@ class Recorder:
     def __init__(self, path, world):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.file = open(path, 'w', newline='', encoding='utf-8')
-        self.file.write('# ' + json.dumps({'schema': 2, 'controller_version': 2, 'angle_convention': 'five relative joints / six links', 'physics': world.mechanics.settings, 'hz': 30, 'observation': 'pre_action_delayed_brightness', 'state': 'post_action', 'config': world.config, 'weights': world.controller.weights, 'initial_tick': world.tick, 'initial_objects': world.objects}) + '\n')
+        self.file.write('# ' + json.dumps({'schema': 2, 'controller_version': 2, 'angle_convention': 'five relative joints / six links', 'physics': world.mechanics.settings, 'hz': 30, 'observation': 'pre_action_delayed_brightness', 'state': 'post_action', 'config': world.config, 'weights': world.controller.weights, 'initial_tick': world.tick, 'initial_objects': world.objects, 'initial_spawn': world.initial_spawn, 'record_start_pose': {'x':world.x,'y':world.y,'heading_rad':world.heading}}) + '\n')
         self.writer = csv.writer(self.file)
         self.writer.writerow(['tick', 'time_s'] + [f'belly_{i}' for i in range(45)] + [f'head_{i}' for i in range(9)] + [f'target_{i}_rad' for i in range(6)] + [f'actual_{i}_rad' for i in range(6)] + ['hp', 'head_x_m', 'head_y_m', 'head_z_m', 'head_pitch_rad', 'head_yaw_rad', 'head_roll_rad'] + ['control_mode','support_strategy','rear_load_n','front_load_n','rear_slip_m','front_slip_m','rear_force_n','front_force_n','rear_grip','front_grip','rear_x_m','center_path_m'])
 

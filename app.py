@@ -16,7 +16,11 @@ ROOT = Path(__file__).resolve().parent
 
 class App:
     def __init__(self, config=None, weights=None, use3d=True):
-        self.config = config or read_config()
+        self.config = copy.deepcopy(config if config is not None else read_config())
+        saved_layout=ROOT/'user-layout.json'
+        if config is None and saved_layout.exists():
+            self.config['layout']=json.loads(saved_layout.read_text(encoding='utf-8'))
+        self.layout_editor=None
         self.weights = weights
         self.world = World(self.config, weights)
         self.window = tk.Tk()
@@ -43,6 +47,7 @@ class App:
         ttk.Button(bar, text='重みを読む', command=self.load_weights).pack(side='left', padx=4)
         self.mode = tk.StringVar(value='両方')
         ttk.Combobox(bar, textvariable=self.mode, values=['両方', '本体ビュー', '触覚グリッド'], state='readonly', width=12).pack(side='left', padx=4)
+        ttk.Button(bar,text='配置設定',command=self.open_layout).pack(side='left',padx=5)
         self.manual = tk.BooleanVar(value=False)
         ttk.Checkbutton(bar, text='手動目標角', variable=self.manual).pack(side='left', padx=6)
         controls = ttk.Frame(self.window, padding=5)
@@ -122,16 +127,45 @@ class App:
         self.running = not self.running
         self.accumulator = 0.
 
+    def open_layout(self):
+        if self.layout_editor and self.layout_editor.window.winfo_exists():
+            self.layout_editor.window.lift()
+            return
+        from layout_editor import LayoutEditor
+        self.layout_editor=LayoutEditor(self)
+
+    def apply_layout(self,layout):
+        config=copy.deepcopy(self.config)
+        config['layout']=copy.deepcopy(layout)
+        World(config,self.weights)  # Validate before changing the active session.
+        path=ROOT/'user-layout.json'
+        temp=path.with_suffix('.json.tmp')
+        temp.write_text(json.dumps(layout,ensure_ascii=False,indent=2),encoding='utf-8')
+        temp.replace(path)
+        self.config=config
+        self.scenario.set('標準環境')
+        self.reset()
+
     def reset(self):
         if self.recorder:
             self.record()
         config = copy.deepcopy(self.config)
         scenario = self.scenario.get()
         if scenario != '標準環境':
+            if 'layout' in config:
+                from layout import resolve_layout
+                config['spawn'],_=resolve_layout(config.pop('layout'))
             kinds = {'餌に接触': 'food', '害に接触': 'harm', '段差に接触': 'obstacle'}
-            config['environment'] = [] if scenario == '地面' else [{'kind': kinds[scenario], 'x': .245, 'y': 0., 'radius': .06, 'height': .04 if scenario != '害に接触' else .005}]
+            spawn=config.get('spawn',{})
+            heading=math.radians(spawn.get('heading_deg',0.))
+            hx=spawn.get('x',0.)+.27*math.cos(heading)
+            hy=spawn.get('y',0.)+.27*math.sin(heading)
+            config['environment'] = [] if scenario == '地面' else [{'kind': kinds[scenario], 'x': hx, 'y': hy, 'radius': .06, 'height': .04 if scenario != '害に接触' else .005}]
         config.setdefault('physics',{})['strategy'] = self.support.get()
         self.world = World(config, self.weights)
+        if self.renderer:
+            from panda3d.core import Vec3
+            self.renderer.target=Vec3(*self.world.initial_center)
         self.trail = []
         self.accumulator = 0.
 
@@ -200,14 +234,14 @@ class App:
         m=self.world.mechanics
         cx=(self.world.nodes[0][0]+self.world.nodes[-1][0])/2
         self.canvas.create_rectangle(x+10,y+70,x+min(width-10,525),y+137,fill='#182231',outline='')
-        self.text(x+18,y+74,f'正味X {(cx-.135)*1000:+.1f} mm / {m.reason}',11,'#ffd47d')
+        self.text(x+18,y+74,f'正味X {(cx-self.world.initial_center[0])*1000:+.1f} mm / {m.reason}',11,'#ffd47d')
         for i,name in enumerate(('後足','前足')):
             self.text(x+18,y+96+i*18,f'{name} {m.states[i]} · 荷重 {m.loads[i]:.3f} N · 滑り {m.slip[i]*1000:+.2f} mm/frame',9)
 
     def draw_legacy_scene(self, x, y, width, height):
         self.panel(x, y, width, height, '01 / WORLD · 観察者専用CG', '前後2点支持 / 相対関節5軸 / 接触・力・滑りは観察専用')
         scale = min(width / .95, (height - 100) / .48)
-        center = self.world.x + .19 if self.follow.get() else .19
+        center = self.world.x + .19 if self.follow.get() else self.world.initial_spawn['x']+.19
 
         def project(px, py, pz):
             return x + width * .38 + (px - center + py * .48) * scale, y + height * .73 + (py * .5 - pz) * scale
@@ -252,7 +286,7 @@ class App:
             self.canvas.create_line(px,py-9,px,py-9-mechanics.loads[idx]*28,fill='#8dc9ff',arrow='last',width=3)
             self.text(px,py+8,('REAR' if idx==0 else 'FRONT')+' / '+mechanics.states[idx],9,color,anchor='n')
         center_x = (self.world.nodes[0][0]+self.world.nodes[-1][0])/2
-        self.text(x+16,y+64,f'正味X {(center_x-.135)*1000:+.1f} mm   軌跡長 {self.world.distance*1000:.1f} mm   {mechanics.reason}',11,'#ffd47d')
+        self.text(x+16,y+64,f'正味X {(center_x-self.world.initial_center[0])*1000:+.1f} mm   軌跡長 {self.world.distance*1000:.1f} mm   {mechanics.reason}',11,'#ffd47d')
         for idx,name in enumerate(('後足','前足')):
             self.text(x+16,y+87+idx*20,f'{name}: N={mechanics.loads[idx]:.3f} N  F={mechanics.forces[idx]:+.3f} N  滑り={mechanics.slip[idx]*1000:+.2f} mm/frame  {mechanics.states[idx]}',10)
         h = self.world.nodes[-1]
@@ -348,6 +382,7 @@ class App:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config')
+    parser.add_argument('--layout',help='Load a saved layout JSON, overriding the saved GUI layout')
     parser.add_argument('--weights')
     parser.add_argument('--legacy',action='store_true',help='Use the previous Tk pseudo-3D renderer')
     args = parser.parse_args()
@@ -355,4 +390,6 @@ if __name__ == '__main__':
     if checkpoint and checkpoint.get('controller_version') != 2:
         parser.error('Checkpoint controller_version must be 2; retrain old weights.')
     weights = checkpoint['weights'] if checkpoint else None
-    App(read_config(args.config), weights, use3d=not args.legacy).window.mainloop()
+    config=read_config(args.config) if args.config or args.layout else None
+    if args.layout:config['layout']=json.loads(Path(args.layout).read_text(encoding='utf-8'))
+    App(config, weights, use3d=not args.legacy).window.mainloop()

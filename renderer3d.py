@@ -72,6 +72,7 @@ class Renderer3D:
         self.root.setLight(self.sun);self.root.setShaderAuto()
         floor=mesh('floor',[([(-10,-10,0),(10,-10,0),(10,10,0),(-10,10,0)],(0,0,1))])
         floor.reparentTo(self.root);floor.setColor(.18,.23,.29,1)
+        self.floor=floor
         lines=LineSegs('10cm-grid');lines.setColor(.31,.39,.46,1);lines.setThickness(1)
         for i in range(-40,41):
             k=i*.1
@@ -152,6 +153,8 @@ class Renderer3D:
                 else:line.drawTo(point[0],point[1],.001)
             self.trail_node=self.root.attachNewNode(line.create());self.trail_node.setLightOff();self.trail_node.setShaderOff()
         if follow:self.target=Vec3((nodes[0][0]+nodes[-1][0])/2+.05,(nodes[0][1]+nodes[-1][1])/2,.025)
+        self.floor.setPos(self.target.x,self.target.y,0.)
+        self.grid.setPos(round(self.target.x*10)/10,round(self.target.y*10)/10,0.)
         yaw=math.radians(self.yaw);elevation=math.radians(self.elevation)
         self.base.camera.setPos(self.target+Vec3(self.distance*math.cos(elevation)*math.cos(yaw),self.distance*math.cos(elevation)*math.sin(yaw),self.distance*math.sin(elevation)))
         self.base.camera.lookAt(self.target)

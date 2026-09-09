@@ -69,5 +69,10 @@
     "joint_torque_nm": 0.035,
     "joint_rate_rad_s": 1.8,
     "pad_height_m": 0.006
+  },
+  "spawn": {
+    "x": 0.0,
+    "y": 0.0,
+    "heading_deg": 0.0
   }
 }

@@ -4,3 +4,6 @@ checkpoints/
 *.pyc
 
 .venv/
+
+user-layout.json
+user-layout.json.tmp

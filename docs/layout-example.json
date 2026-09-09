@@ -1,0 +1,74 @@
+{
+  "seed": 7,
+  "bounds": [
+    -1.0,
+    2.0,
+    -1.0,
+    1.0
+  ],
+  "spawn": {
+    "x": 0.2,
+    "y": -0.2,
+    "heading_deg": 15,
+    "randomize": true
+  },
+  "groups": {
+    "obstacle": {
+      "count": 3,
+      "random_count": true,
+      "count_min": 2,
+      "count_max": 4,
+      "random_positions": true,
+      "radius": 0.07,
+      "height": 0.065,
+      "positions": [
+        {
+          "x": 0.83,
+          "y": 0.01,
+          "radius": 0.07,
+          "height": 0.065
+        }
+      ]
+    },
+    "harm": {
+      "count": 3,
+      "random_count": true,
+      "count_min": 2,
+      "count_max": 4,
+      "random_positions": true,
+      "radius": 0.08,
+      "height": 0.005,
+      "positions": [
+        {
+          "x": 0.6,
+          "y": 0.0,
+          "radius": 0.08,
+          "height": 0.005
+        }
+      ]
+    },
+    "food": {
+      "count": 3,
+      "random_count": true,
+      "count_min": 2,
+      "count_max": 4,
+      "random_positions": true,
+      "radius": 0.055,
+      "height": 0.04,
+      "positions": [
+        {
+          "x": 0.4,
+          "y": 0.0,
+          "radius": 0.055,
+          "height": 0.04
+        },
+        {
+          "x": 1.04,
+          "y": 0.15,
+          "radius": 0.07,
+          "height": 0.04
+        }
+      ]
+    }
+  }
+}
