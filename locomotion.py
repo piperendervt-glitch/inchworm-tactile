@@ -52,7 +52,7 @@ class RigidMechanics:
                 joint.setAngularLimit(axis,-limit,limit)
                 motor=joint.getRotationalLimitMotor(axis)
                 motor.setMotorEnabled(True);motor.setMaxMotorForce(self.settings['joint_torque_nm'])
-            self.world.attachConstraint(joint,True);self.joints.append(joint)
+            self.world.attachConstraint(joint,False);self.joints.append(joint)
         self.grips=[0.,0.];self.anchors=[None,None]
         self.loads=[0.,0.];self.slip=[0.,0.];self.slip_total=[0.,0.];self.forces=[0.,0.]
         self.capacity=[0.,0.];self.states=['air','air'];self.reason='rigid contact'
@@ -71,7 +71,7 @@ class RigidMechanics:
     def point(self,path,xyz):return tuple(path.getPos()+path.getQuat().xform(Vec3(*xyz)))
     def feet(self):return [self.point(p,(0,0,-.018)) for p in self.supports]
     def center(self):return tuple(self.body.getPos())
-    def head_position(self):return self.point(self.segments[2],(.045,0,0))
+    def head_position(self):return self.point(self.segments[2],(.040,0,0))
     def heading(self):
         v=self.body.getQuat().xform(Vec3(1,0,0));return math.atan2(v.y,v.x)
     def orientation(self):
@@ -81,7 +81,7 @@ class RigidMechanics:
     def geometry(self):
         return [self.point(self.segments[0],(-.045,0,0))]+[self.point(p,(.045,0,0)) for p in self.segments]
     def surface_points(self):
-        return [self.point(p,((row-1)*.015,(col-1)*.009,-APOTHEM))
+        return [self.point(p,((row-1)*.004,(col-1)*.009,-APOTHEM))
             for p in self.segments for row in range(3) for col in range(3)]
 
     def contacts(self,leg):

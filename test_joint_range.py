@@ -13,7 +13,12 @@ class RangeTests(unittest.TestCase):
                     w=World();w.mechanics.world.setGravity(Vec3(0))
                     for p in w.mechanics.segments:p.setZ(p.getZ()+1)
                     targets=[0.]*6;targets[axis]=sign*math.radians(120)
-                    for _ in range(120):w.step(targets)
+                    for _ in range(120):
+                        w.step(targets)
+                        for a,b in zip(w.mechanics.segments,w.mechanics.segments[1:]):
+                            contacts=w.mechanics.world.contactTestPair(a.node(),b.node()).getContacts()
+                            self.assertFalse(any(c.getManifoldPoint().getDistance()<-.0001 for c in contacts),
+                                             'Adjacent segment penetration during bending')
                     self.assertAlmostEqual(math.degrees(w.angles[axis]),sign*120,delta=1)
                     self.assertTrue(all(0<=v<=1 for v in w.observation().flatten()))
 

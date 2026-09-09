@@ -112,8 +112,8 @@ class Renderer3D:
         self.sensor_face=self.root.attachNewNode('head-sensor-face')
         for row in range(3):
             for col in range(3):
-                cell=self.sphere.copyTo(self.sensor_face);cell.setScale(.0025)
-                cell.setPos((col-1)*.007,.009,(row-1)*.007);cell.setColor(.04,.06,.08,1)
+                cell=self.sphere.copyTo(self.sensor_face);cell.setScale(.00035)
+                cell.setPos((col-1)*.0007,.003,(row-1)*.0007);cell.setColor(.04,.06,.08,1)
         self.objects=[];self.object_signature=None;self.labels=[]
         self.trail_node=None
 
@@ -151,7 +151,11 @@ class Renderer3D:
             segment.setPos(part.getPos());segment.setQuat(part.getQuat());segment.setScale(1)
             segment.setColor(*((.95,.72,.29,1) if i==2 else (.16,.70,.58,1)))
         for link in self.links[3:]:link.hide()
-        for joint in self.joints:joint.hide()
+        for i,joint in enumerate(self.joints):
+            if i<2:
+                joint.show();joint.setPos(*m.point(m.segments[i],(.045,0,0)));joint.setScale(.003)
+                joint.setColor(.73,.90,.86,1)
+            else:joint.hide()
         self.head.hide()
         for i,point in enumerate(m.feet()):
             self.pads[i].hide()  # No legs, feet, or standing platform.

@@ -5,7 +5,7 @@ from body_geometry import VERTICES,APOTHEM
 
 class HexagonTests(unittest.TestCase):
     def test_shared_hull_has_flat_bottom(self):
-        self.assertEqual(len(VERTICES),12)
+        self.assertEqual(len(VERTICES),24)
         self.assertEqual(sum(abs(v[2]+APOTHEM)<1e-10 for v in VERTICES),4)
         w=World()
         self.assertTrue(all(p.node().getShape(0).getType().getName()=='BulletConvexHullShape' for p in w.mechanics.segments))

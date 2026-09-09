@@ -100,7 +100,7 @@ class World:
         food_contacts = set()
         for row in range(3):
             for col in range(3):
-                x,y,z=self.mechanics.point(self.mechanics.segments[2],(.045,(col-1)*.009,(row-1)*.009))
+                x,y,z=self.mechanics.point(self.mechanics.segments[2],(.040,(col-1)*.0007,(row-1)*.0007))
                 kind, idx, height = self.material_at(x,y)
                 indentation = max(0., (height + .01 - z) / .025) if idx >= 0 else 0.
                 harmful |= kind == 'harm' and indentation > 0
@@ -177,7 +177,7 @@ class Recorder:
     def __init__(self, path, world):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.file = open(path, 'w', newline='', encoding='utf-8')
-        self.file.write('# '+json.dumps({'schema':5,'controller_version':5,'training_enabled':False,'training_steps':0,'controller_seed':world.controller.seed,'weights_sha256':world.controller.fingerprint,'initial_weights':world.controller.weights,'angle_convention':'joint 1 XYZ then joint 2 XYZ radians; three hexagonal prisms lying on floor','body_shape':'hexagonal_prism','physics':world.mechanics.settings,'physiology':world.physiology,'hz':30,'observation':'pre_action; tactile delayed, internal state from preceding step; all normalized 0..1','state':'post_action','config':world.config,'initial_tick':world.tick,'initial_objects':world.objects,'initial_spawn':world.initial_spawn,'record_start_pose':{'x':world.x,'y':world.y,'heading_rad':world.heading}})+'\n')
+        self.file.write('# '+json.dumps({'schema':5,'controller_version':5,'training_enabled':False,'training_steps':0,'controller_seed':world.controller.seed,'weights_sha256':world.controller.fingerprint,'initial_weights':world.controller.weights,'angle_convention':'joint 1 XYZ then joint 2 XYZ radians; three hexagonal prisms lying on floor','body_shape':'tapered_hexagonal_prism','physics':world.mechanics.settings,'physiology':world.physiology,'hz':30,'observation':'pre_action; tactile delayed, internal state from preceding step; all normalized 0..1','state':'post_action','config':world.config,'initial_tick':world.tick,'initial_objects':world.objects,'initial_spawn':world.initial_spawn,'record_start_pose':{'x':world.x,'y':world.y,'heading_rad':world.heading}})+'\n')
         self.writer=csv.writer(self.file)
         self.writer.writerow(['tick','time_s']+[f'belly_{i}' for i in range(27)]+[f'head_{i}' for i in range(9)]+[f'joint_touch_{i}' for i in range(12)]+[f'support_touch_{i}' for i in range(18)]+['input_hp','input_damage_hp','input_hunger','input_food_relief']+[f'target_{i}_rad' for i in range(6)]+[f'actual_{i}_rad' for i in range(6)]+['hp','hunger','damage_hp','food_relief','food_events','head_x_m','head_y_m','head_z_m','head_pitch_rad','head_yaw_rad','head_roll_rad','control_mode','support_strategy','rear_load_n','front_load_n','rear_foot_travel_m','front_foot_travel_m','rear_force_n','front_force_n','rear_grip','front_grip','rear_x_m','center_path_m'])
 
