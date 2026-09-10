@@ -1,0 +1,49 @@
+{
+  "v": 1,
+  "type": "hello",
+  "session": "3f2a9c1e-0000-4000-8000-000000000001",
+  "tick": 0,
+  "build": "0.5.0-creature",
+  "hz": 30,
+  "body": {
+    "length": 3.0,
+    "radius": 0.8,
+    "cellRadius": 0.4,
+    "cells": 16,
+    "runSpeed": 6.0,
+    "maxHealth": 120
+  },
+  "player": {
+    "maxHealth": 250
+  },
+  "arena": {
+    "bounds": [
+      -40,
+      -40,
+      40,
+      40
+    ],
+    "obstacles": [
+      {
+        "shape": "circle",
+        "center": [
+          3.0,
+          -5.0
+        ],
+        "radius": 1.5
+      },
+      {
+        "shape": "box",
+        "center": [
+          10.0,
+          2.0
+        ],
+        "size": [
+          4.0,
+          2.0
+        ],
+        "yaw": 0.0
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "type": "welcome",
+  "session": "3f2a9c1e-0000-4000-8000-000000000001",
+  "tick": 0,
+  "brain": {
+    "species": "ecoli",
+    "generation": 0,
+    "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+    "inputs": 68,
+    "outputs": 2
+  },
+  "field": {
+    "cols": 64,
+    "rows": 64,
+    "channels": 2
+  },
+  "maxCreatures": 12
+}

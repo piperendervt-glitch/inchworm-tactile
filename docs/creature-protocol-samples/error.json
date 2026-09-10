@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "type": "error",
+  "session": "3f2a9c1e-0000-4000-8000-000000000001",
+  "tick": 0,
+  "code": "version_mismatch",
+  "message": "expected v=1, got 2"
+}
