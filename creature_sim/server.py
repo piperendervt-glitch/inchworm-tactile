@@ -244,6 +244,8 @@ class BrainServer:
         # clock and only looks at E. coli; the jellies step after it.
         ecoli_only = dict(message)
         ecoli_only['creatures'] = [c for c in creatures if c.get('species', 'ecoli') == 'ecoli']
+        ecoli_only['jellies'] = [c['pos'] for c in creatures
+                                 if c.get('species') == 'jelly' and c.get('state') != 'dead']
         command = self.colony.step(ecoli_only)
         orders = command['creatures'] + self.jellies.step(message)
         command = protocol.make_command(self.session, command['tick'], orders)

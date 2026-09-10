@@ -69,6 +69,9 @@ def _ring_cell(skin_index):
 
 
 SKIN_TO_RING = tuple(_ring_cell(i) for i in range(16))
+# Skin cells that rest on the floor (down and the diagonals below, both
+# segments). The floor presses on them every tick; it is not a poke.
+FLOOR_CELLS = frozenset(i for i in range(16) if i % 8 in (3, 4, 5))
 
 
 class Jelly:
@@ -242,6 +245,8 @@ class JellyColony:
         # Pokes: skin pressed harder than this jelly's nociceptor threshold.
         j.tx = j.tz = 0.0
         for i, cell in enumerate(observed.get('cells') or ()):
+            if i in FLOOR_CELLS:
+                continue
             p = float(cell.get('p', 0.0))
             if p >= j.genome['noci'] and self.stimulate(j, SKIN_TO_RING[i]):
                 j.pokes += 1

@@ -255,6 +255,8 @@ class Ecosystem(ReplayWorld):
         observation = self.observation()
         ecoli_only = dict(observation)
         ecoli_only['creatures'] = [c for c in observation['creatures'] if c['species'] == 'ecoli']
+        ecoli_only['jellies'] = [c['pos'] for c in observation['creatures']
+                                 if c['species'] == 'jelly' and c['state'] != 'dead']
         command = self.colony.step(ecoli_only)
         orders = {c['id']: c for c in command['creatures']}
         for c in self.jellies.step(observation):

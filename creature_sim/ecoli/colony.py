@@ -13,7 +13,7 @@ import math
 import random
 
 from .. import genome as genes
-from ..field import DAMAGE as DAMAGE_TRACE, DEATH, FOOD, PATH, StigmergyField
+from ..field import DAMAGE as DAMAGE_TRACE, DEATH, FOOD, PATH, PLANKTON, StigmergyField
 from ..physiology import DEFAULTS as PHYSIOLOGY, Physiology
 from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, EAR_COUNT, EARS,
                     ENERGY, FIELD_DAMAGE, FIELD_DEATH, FIELD_FOOD, FIELD_PATH_MEAN,
@@ -23,7 +23,8 @@ from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, EAR_COUNT, EARS,
 # starves in about a minute, and a live mech is a meal in two bites.
 DEFAULTS = dict(
     decision_seconds=0.25,
-    initial_energy=100.0,
+    # Born hungry enough not to divide at once, full enough to go looking.
+    initial_energy=60.0,
     max_energy=PHYSIOLOGY['max_energy'],
     basal_cost=PHYSIOLOGY['basal_cost'],
     motion_cost=PHYSIOLOGY['motion_cost'],
@@ -49,11 +50,19 @@ DEFAULTS = dict(
     # written once and heavily; being shot is written for as long as it lasts.
     deposit_damage=8.0,
     deposit_death=40.0,
+    # Food gives off a smell: wrecks and jellies write the food trace where
+    # they are, every second, so a blind hunter has a gradient to climb.
+    # (Plankton cannot serve: the jellies graze it to nothing.)
+    smell_wreck=3.0,
+    smell_jelly=0.6,
     # Field value that reads as 1.0 at the input layer.
     field_scale=4.0,
 )
 
 KIND_NONE, KIND_WALL, KIND_PREY, KIND_OTHER = 0, 1, 2, 3
+# Ring positions that rest on the floor (down and the two diagonals below).
+# The floor reads as a wall, and a reflex that fears walls must not fear it.
+FLOOR_RINGS = (3, 4, 5)
 
 
 class Creature:
@@ -199,13 +208,35 @@ class Colony:
 
     # -- the reflex policy ----------------------------------------------
 
+    def scent(self, observed):
+        """Plankton under the front and the rear of the skin, as a food smell.
+
+        Wrecks shed it and jellies sit in it, so to an E. coli it is the smell
+        of both; it is not eaten by them, only followed.
+        """
+        x, _, z = observed['pos']
+        heading = float(observed['heading'])
+        scale = self.settings['field_scale']
+        front = back = 0.0
+        for i in range(CELLS):
+            cx, cz = self.cell_world_xz(x, z, heading, i)
+            v = min(1.0, self.field.sample(cx, cz, PLANKTON) / scale)
+            if i < 8:
+                front += v / 8.0
+            else:
+                back += v / 8.0
+        return front, back
+
     @staticmethod
-    def reflex(creature, inputs):
+    def reflex(creature, inputs, scent=(0.0, 0.0)):
         """Tumble probability from the reflex genes and the senses alone.
 
             p = sigmoid( logit(base) + hearing * (ear front - ear back)
-                       + food * (food trace front - back) + fear * (damage + death)
+                       + food * (food smell front - back) + fear * (damage + death)
                        + touch * wall pressure ahead + noise * gauss )
+
+        The food smell is the food trace plus the plankton scent. The wall
+        pressure ahead ignores the cells that rest on the floor.
 
         Worked: all genes 0 and base 0.3 gives 0.3. hearing 2 with a sound
         ahead at 0.5 gives logit -0.85 + 1.0 = 0.15, p = 0.54 (turns away);
@@ -213,10 +244,10 @@ class Colony:
         """
         g = creature.genome
         front, back = inputs[EARS], inputs[EARS + 2]
-        food_front = sum(inputs[FIELD_FOOD + i] for i in range(8)) / 8.0
-        food_back = sum(inputs[FIELD_FOOD + 8 + i] for i in range(8)) / 8.0
+        food_front = sum(inputs[FIELD_FOOD + i] for i in range(8)) / 8.0 + scent[0]
+        food_back = sum(inputs[FIELD_FOOD + 8 + i] for i in range(8)) / 8.0 + scent[1]
         danger = max(inputs[FIELD_DAMAGE + i] + inputs[FIELD_DEATH + i] for i in range(CELLS))
-        wall_ahead = max(inputs[PRESSURE + i] * inputs[WALL + i] for i in range(8))
+        wall_ahead = max(inputs[PRESSURE + i] * inputs[WALL + i] for i in range(8) if i not in FLOOR_RINGS)
         v = (_logit(g['base']) + g['hearing'] * (front - back) + g['food'] * (food_front - food_back)
              + g['fear'] * danger + g['touch'] * wall_ahead
              + g['noise'] * creature.rng.gauss(0.0, 1.0))
@@ -232,6 +263,15 @@ class Colony:
         dt = min(dt, 0.1)
         self.tick = int(observation.get('tick', self.tick + 1))
         self.time = float(observation.get('t', self.time + dt))
+
+        # The smell of food. Wrecks come in ``prey``; jelly positions are
+        # handed over by whoever splits the species apart (``jellies``).
+        for item in observation.get('prey') or ():
+            if item.get('kind') == 'wreck' and item.get('pos'):
+                self.field.deposit(float(item['pos'][0]), float(item['pos'][2]), FOOD,
+                                   self.settings['smell_wreck'] * dt)
+        for pos in observation.get('jellies') or ():
+            self.field.deposit(float(pos[0]), float(pos[2]), FOOD, self.settings['smell_jelly'] * dt)
 
         seen = set()
         out = []
@@ -292,7 +332,7 @@ class Colony:
         # Decide only every decision_seconds, and never mid-tumble.
         if creature.turn_left <= 0.0 and creature.decision_left <= 0.0 and not creature.starved:
             if self.policy == 'genes':
-                creature.tumble_probability = self.reflex(creature, inputs)
+                creature.tumble_probability = self.reflex(creature, inputs, self.scent(observed))
                 creature.deposit = 0.5
             else:
                 outputs, creature.state = self.brain.step(inputs, creature.state)

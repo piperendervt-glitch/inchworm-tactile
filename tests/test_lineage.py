@@ -58,15 +58,15 @@ class GenomeTests(unittest.TestCase):
 
 
 class PhysiologyTests(unittest.TestCase):
-    def test_a_full_individual_that_finds_nothing_starves_within_two_minutes(self):
+    def test_a_full_individual_running_and_finding_nothing_starves_within_two_minutes(self):
         body = Physiology(100.0)
         t = 0.0
         while not body.starved and t < 300:
-            body.step(1 / HZ, PHYSIOLOGY, 1.0, 0.0, 0.85)
+            body.step(1 / HZ, PHYSIOLOGY, 1.0, 1.0, 0.85)     # running flat out
             t += 1 / HZ
         self.assertTrue(body.starved)
         self.assertLess(t, 120.0, f'starved only after {t:.0f} s')
-        self.assertGreater(t, 30.0, 'but not absurdly fast')
+        self.assertGreater(t, 60.0, 'but with time to look for food')
 
     def test_held_above_satiety_it_asks_to_divide_once_then_waits(self):
         body = Physiology(100.0)
@@ -160,6 +160,38 @@ class ReflexPolicyTests(unittest.TestCase):
         c.genome['hearing'] = -2.0
         self.assertAlmostEqual(Colony.reflex(c, loud_ahead), 0.136, places=2)
 
+    def test_the_floor_is_not_a_wall_ahead_but_plankton_is_a_smell(self):
+        colony, c = self.colony(touch=3.0)
+        floored = [0.0] * INPUTS
+        for i in (3, 4, 5, 11, 12, 13):             # the cells resting on the floor
+            floored[i] = 0.8
+            floored[16 + i] = 1.0                   # WALL offset is 16
+        self.assertAlmostEqual(Colony.reflex(c, floored), 0.3, places=3, msg='the floor must not count')
+        floored[1] = 0.8; floored[16 + 1] = 1.0     # a real wall on the front-right
+        self.assertGreater(Colony.reflex(c, floored), 0.8)
+
+        c.genome.update(touch=0.0, food=-3.0)
+        quiet = [0.0] * INPUTS
+        self.assertLess(Colony.reflex(c, quiet, scent=(0.5, 0.0)), 0.1, 'smell ahead: keep running')
+        self.assertGreater(Colony.reflex(c, quiet, scent=(0.0, 0.5)), 0.6, 'smell behind: turn')
+        # And the scent really is read from the plankton channel around the skin.
+        colony.field.deposit(3.0, 0.0, PLANKTON, 8.0)
+        front, back = colony.scent(creature(pos=[1.0, 0.0, 0.0], heading=math.pi / 2))   # facing +X, toward it
+        self.assertGreater(front, back)
+
+    def test_wrecks_and_jellies_smell_of_food(self):
+        colony = Colony(bounds=BOUNDS, seed=1)
+        wreck = dict(kind='wreck', id=0, pos=[10.0, 0.0, 10.0], hp=300, maxHp=300)
+        for tick in range(30):
+            colony.step(observe(tick, [creature(state='spawned' if tick == 0 else 'alive')],
+                                prey=[wreck], jellies=[[-10.0, 0.0, -10.0]]))
+        from creature_sim.field import FOOD
+        # One second of shedding, spread over the nearest cells and diffusing.
+        self.assertGreater(colony.field.sample(10.0, 10.0, FOOD), 0.3, 'a wreck smells strongly')
+        self.assertGreater(colony.field.sample(-10.0, -10.0, FOOD), 0.05, 'a jelly smells faintly')
+        self.assertGreater(colony.field.sample(10.0, 10.0, FOOD), colony.field.sample(-10.0, -10.0, FOOD))
+        self.assertLess(colony.field.sample(0.0, 30.0, FOOD), 0.05, 'nothing where nothing is')
+
     def test_the_net_is_never_asked(self):
         colony, c = self.colony(noise=1.0)
         before = list(c.state)
@@ -208,6 +240,18 @@ class JellyRingTests(unittest.TestCase):
         self.assertEqual(fired_at.get(1), 1)
         self.assertEqual(fired_at.get(7), 1)
         self.assertEqual(fired_at.get(4), 4, 'the two waves meet at the far side')
+
+    def test_the_floor_does_not_poke(self):
+        colony = JellyColony(bounds=BOUNDS, seed=1)
+        colony.step(observe(0, [creature(species='jelly', state='spawned')]))
+        j = colony.jellies[0]
+        j.timers = []
+        cells = quiet_cells()
+        for i in (3, 4, 5, 11, 12, 13):
+            cells[i] = dict(p=0.9, k=1, h=0.0)
+        for tick in range(1, 30):
+            colony.step(observe(tick, [creature(species='jelly', cells=cells)]))
+        self.assertEqual(j.pokes, 0, 'resting on the floor is not a poke')
 
     def test_a_poke_from_the_right_pushes_left(self):
         colony = JellyColony(bounds=BOUNDS, seed=1)

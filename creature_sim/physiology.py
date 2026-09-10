@@ -11,10 +11,13 @@ The numbers are tuned for quick turnover, as in the jellyfish prototype: a
 full individual that finds nothing dies within about a minute.
 """
 
+# A full E. coli running flat out lasts 100 s; born at 60 it has a minute
+# to find its first meal. (1.0 + 1.0 with birth at 100 starved everything
+# in forty seconds: founders divided at once and the halves never ate.)
 DEFAULTS = dict(
     max_energy=100.0,
-    basal_cost=1.0,        # per second, times the metab gene
-    motion_cost=1.0,       # per second at full speed
+    basal_cost=0.5,        # per second, times the metab gene
+    motion_cost=0.5,       # per second at full speed
     fed_seconds=2.0,       # how long above satiety before dividing
     divide_cooldown=4.0,   # after asking, wait this long before asking again
     child_share=0.5,       # fraction of the parent's energy the child takes
