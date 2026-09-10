@@ -5,6 +5,7 @@ import random
 import unittest
 
 from creature_sim import genome as genes
+from creature_sim.ecoli.brain import EARS, INPUTS
 from creature_sim.ecoli.colony import Colony
 from creature_sim.field import PLANKTON, StigmergyField
 from creature_sim.jelly.colony import RING, SKIN_TO_RING, JellyColony
@@ -120,7 +121,11 @@ class EcoliLineageTests(unittest.TestCase):
         self.assertAlmostEqual(parent.energy + child.energy, 100.0, delta=1.0)
         self.assertLess(parent.energy, 60.0)
         for key in parent.genome:
-            self.assertLess(abs(child.genome[key] / parent.genome[key] - 1), 0.6, key)
+            low, high, kind = genes.RANGES[key]
+            if kind == 'log':
+                self.assertLess(abs(child.genome[key] / parent.genome[key] - 1), 0.6, key)
+            else:
+                self.assertLess(abs(child.genome[key] - parent.genome[key]), (high - low) * 0.25, key)
         self.assertNotEqual(child.genome, parent.genome)
 
     def test_the_speed_gene_scales_the_run(self):
@@ -133,6 +138,52 @@ class EcoliLineageTests(unittest.TestCase):
                 self.assertAlmostEqual(entry['speed'], 0.5)
                 return
         self.fail('never ran')
+
+
+class ReflexPolicyTests(unittest.TestCase):
+    def colony(self, **genome):
+        colony = Colony(bounds=BOUNDS, seed=3, policy='genes')
+        colony.step(observe(0, [creature(state='spawned')]))
+        c = colony.creatures[0]
+        c.genome.update(dict(base=0.3, hearing=0.0, food=0.0, fear=0.0, touch=0.0, noise=0.0))
+        c.genome.update(genome)
+        return colony, c
+
+    def test_worked_examples(self):
+        colony, c = self.colony()
+        quiet = [0.0] * INPUTS
+        self.assertAlmostEqual(Colony.reflex(c, quiet), 0.3, places=3)
+        loud_ahead = list(quiet)
+        loud_ahead[EARS] = 0.5
+        c.genome['hearing'] = 2.0
+        self.assertAlmostEqual(Colony.reflex(c, loud_ahead), 0.537, places=2)
+        c.genome['hearing'] = -2.0
+        self.assertAlmostEqual(Colony.reflex(c, loud_ahead), 0.136, places=2)
+
+    def test_the_net_is_never_asked(self):
+        colony, c = self.colony(noise=1.0)
+        before = list(c.state)
+        for tick in range(1, 60):
+            colony.step(observe(tick, [creature()]))
+        self.assertEqual(c.state, before, 'recurrent state untouched: the brain was not run')
+        self.assertGreater(c.decisions, 5)
+
+    def test_founders_differ_from_one_another(self):
+        colony = Colony(bounds=BOUNDS, seed=9, policy='genes')
+        colony.step(observe(0, [creature(cid=i, state='spawned') for i in range(12)]))
+        hearing = [c.genome['hearing'] for c in colony.creatures.values()]
+        self.assertGreater(max(hearing) - min(hearing), 0.5, hearing)
+        self.assertTrue(any(h > 0 for h in hearing) and any(h < 0 for h in hearing),
+                        'both seekers and fleers should be born')
+
+    def test_an_old_lineage_entry_is_completed(self):
+        old = dict(speed=0.9, metab=0.6, satiety=0.8, tumble=1.2)
+        colony = Colony(bounds=BOUNDS, seed=1, policy='genes', founders=[dict(genome=old)])
+        colony.step(observe(0, [creature(state='spawned')]))
+        g = colony.creatures[0].genome
+        for key in ('base', 'hearing', 'food', 'fear', 'touch', 'noise'):
+            self.assertIn(key, g)
+        self.assertLess(abs(g['speed'] - 0.9), 0.2)
 
 
 class JellyRingTests(unittest.TestCase):

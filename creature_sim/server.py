@@ -112,7 +112,8 @@ class SessionLog:
 class BrainServer:
     def __init__(self, port=DEFAULT_PORT, host='0.0.0.0', seed=0, brain_path=None,
                  cols=64, rows=64, max_creatures=32, sessions_dir=None, quiet=False,
-                 mirror=None, lineage_path=None, log_every=1):
+                 mirror=None, lineage_path=None, log_every=1, ecoli_policy='brain'):
+        self.ecoli_policy = ecoli_policy
         self.mirror = parse_endpoint(mirror) if isinstance(mirror, str) else mirror
         # Log one tick in this many. A session that runs for hours would
         # otherwise fill the disk at about 10 MB a game minute. Zero keeps no
@@ -204,7 +205,7 @@ class BrainServer:
         self.field = StigmergyField(bounds, cols=self.cols, rows=self.rows)
         saved = lineage.load(self.lineage_path) if self.lineage_path else dict(ecoli=[], jelly=[])
         self.colony = Colony(brain=self.brain, field=self.field, seed=self.seed,
-                             settings=settings, founders=saved['ecoli'])
+                             settings=settings, founders=saved['ecoli'], policy=self.ecoli_policy)
         jelly_settings = {}
         jelly_body = message.get('jelly') or {}
         if 'runSpeed' in jelly_body:
@@ -226,7 +227,7 @@ class BrainServer:
         self.log.meta(message, welcome)
         self.say(f'[hello] session={session[:8]} bounds={bounds} '
                  f"generation={self.brain.generation} "
-                 f'fingerprint={self.brain.fingerprint[:12]}')
+                 f'fingerprint={self.brain.fingerprint[:12]} ecoli={self.ecoli_policy}')
         return [welcome]
 
     def on_observe(self, message):
@@ -391,6 +392,8 @@ def main(argv=None):
     p.add_argument('--lineage', default=str(ROOT / 'brains' / 'lineage.json'),
                    help="survivors' genes, carried from one session to the next")
     p.add_argument('--no-lineage', action='store_true', help='start every session from the norm')
+    p.add_argument('--ecoli-policy', choices=('brain', 'genes'), default='brain',
+                   help="'brain': the learned net decides; 'genes': reflex genes alone, for selection runs")
     p.add_argument('--log-every', type=int, default=1,
                    help='log one tick in N (for sessions that run for hours); 0 keeps no ticks, only summary and lineage')
     p.add_argument('--quiet', action='store_true')
@@ -398,7 +401,8 @@ def main(argv=None):
     server = BrainServer(port=a.port, host=a.host, seed=a.seed, brain_path=a.brain,
                          cols=a.cols, rows=a.rows, max_creatures=a.max_creatures,
                          sessions_dir=a.sessions, quiet=a.quiet, mirror=a.mirror,
-                         lineage_path=None if a.no_lineage else a.lineage, log_every=a.log_every)
+                         lineage_path=None if a.no_lineage else a.lineage, log_every=a.log_every,
+                         ecoli_policy=a.ecoli_policy)
     server.serve(seconds=a.seconds)
     return 0
 

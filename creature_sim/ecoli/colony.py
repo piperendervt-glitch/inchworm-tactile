@@ -16,8 +16,8 @@ from .. import genome as genes
 from ..field import DAMAGE as DAMAGE_TRACE, DEATH, FOOD, PATH, StigmergyField
 from ..physiology import DEFAULTS as PHYSIOLOGY, Physiology
 from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, EAR_COUNT, EARS,
-                    ENERGY, FIELD_PATH_MEAN, INPUTS, PREV_TUMBLE, PREY,
-                    PRESSURE, TUMBLE, WALL, EcoliBrain)
+                    ENERGY, FIELD_DAMAGE, FIELD_DEATH, FIELD_FOOD, FIELD_PATH_MEAN,
+                    INPUTS, PREV_TUMBLE, PREY, PRESSURE, TUMBLE, WALL, EcoliBrain)
 
 # Physiology tuned for quick turnover: a full individual that finds nothing
 # starves in about a minute, and a live mech is a meal in two bites.
@@ -96,12 +96,29 @@ class Creature:
         return self.body.eaten
 
 
+def _sigmoid(v):
+    v = max(-30.0, min(30.0, v))
+    return 1.0 / (1.0 + math.exp(-v))
+
+
+def _logit(p):
+    p = max(1e-4, min(1.0 - 1e-4, p))
+    return math.log(p / (1.0 - p))
+
+
 class Colony:
-    def __init__(self, brain=None, field=None, bounds=None, seed=0, settings=None, founders=None):
+    def __init__(self, brain=None, field=None, bounds=None, seed=0, settings=None, founders=None,
+                 policy='brain'):
         self.brain = brain if brain is not None else EcoliBrain(seed=seed)
+        # 'brain': the shared learned net decides, genes modulate it.
+        # 'genes': no net at all; the reflex genes alone decide, so every
+        # individual behaves its own way and selection does the rest.
+        if policy not in ('brain', 'genes'):
+            raise ValueError(f'unknown policy {policy!r}')
+        self.policy = policy
         # Saved survivors of earlier sessions. A newcomer without a parent
         # takes one of these genomes (mutated once) instead of the norm.
-        self.founders = [dict(f['genome']) for f in (founders or []) if f.get('genome')]
+        self.founders = [genes.complete(f['genome'], 'ecoli') for f in (founders or []) if f.get('genome')]
         self.founded = 0
         self.settings = dict(DEFAULTS)
         self.settings.update(settings or {})
@@ -180,6 +197,31 @@ class Colony:
             inputs[EARS + i] = min(1.0, max(0.0, float(ears[i])))
         return inputs, hit
 
+    # -- the reflex policy ----------------------------------------------
+
+    @staticmethod
+    def reflex(creature, inputs):
+        """Tumble probability from the reflex genes and the senses alone.
+
+            p = sigmoid( logit(base) + hearing * (ear front - ear back)
+                       + food * (food trace front - back) + fear * (damage + death)
+                       + touch * wall pressure ahead + noise * gauss )
+
+        Worked: all genes 0 and base 0.3 gives 0.3. hearing 2 with a sound
+        ahead at 0.5 gives logit -0.85 + 1.0 = 0.15, p = 0.54 (turns away);
+        hearing -2 gives -1.85, p = 0.14 (keeps running toward it).
+        """
+        g = creature.genome
+        front, back = inputs[EARS], inputs[EARS + 2]
+        food_front = sum(inputs[FIELD_FOOD + i] for i in range(8)) / 8.0
+        food_back = sum(inputs[FIELD_FOOD + 8 + i] for i in range(8)) / 8.0
+        danger = max(inputs[FIELD_DAMAGE + i] + inputs[FIELD_DEATH + i] for i in range(CELLS))
+        wall_ahead = max(inputs[PRESSURE + i] * inputs[WALL + i] for i in range(8))
+        v = (_logit(g['base']) + g['hearing'] * (front - back) + g['food'] * (food_front - food_back)
+             + g['fear'] * danger + g['touch'] * wall_ahead
+             + g['noise'] * creature.rng.gauss(0.0, 1.0))
+        return _sigmoid(v)
+
     # -- stepping -------------------------------------------------------
 
     def step(self, observation):
@@ -249,11 +291,15 @@ class Colony:
 
         # Decide only every decision_seconds, and never mid-tumble.
         if creature.turn_left <= 0.0 and creature.decision_left <= 0.0 and not creature.starved:
-            outputs, creature.state = self.brain.step(inputs, creature.state)
-            # The tumble gene makes an individual more nervous or more steady
-            # than the shared brain alone would be.
-            creature.tumble_probability = min(1.0, outputs[TUMBLE] * creature.genome['tumble'])
-            creature.deposit = outputs[DEPOSIT]
+            if self.policy == 'genes':
+                creature.tumble_probability = self.reflex(creature, inputs)
+                creature.deposit = 0.5
+            else:
+                outputs, creature.state = self.brain.step(inputs, creature.state)
+                # The tumble gene makes an individual more nervous or more steady
+                # than the shared brain alone would be.
+                creature.tumble_probability = min(1.0, outputs[TUMBLE] * creature.genome['tumble'])
+                creature.deposit = outputs[DEPOSIT]
             creature.decisions += 1
             if creature.rng.random() < creature.tumble_probability:
                 creature.action = 'tumble'
@@ -314,7 +360,7 @@ class Colony:
                     deaths_recorded=self.deaths, births=self.births,
                     species=self.brain.species, generation=self.brain.generation,
                     fingerprint=self.brain.fingerprint,
-                    training_enabled=False, training_steps=0,
+                    training_enabled=False, training_steps=0, policy=self.policy,
                     creatures=[dict(id=c.id, energy=c.energy, decisions=c.decisions,
                                     tumbles=c.tumbles, eaten=c.eaten, bites=c.bites,
                                     alive_s=c.alive_seconds, eating_s=c.eating_seconds,
