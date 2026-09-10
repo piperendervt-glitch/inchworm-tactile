@@ -639,15 +639,22 @@ class ViewerApp:
             cx, cy = self.to_screen(x, z)
             entry = self.frame.command_for(creature.get('id')) or {}
             jelly = creature.get('species') == 'jelly'
-            fill = BODY_DEAD if entry.get('starved') else JELLY_FILL if jelly else BODY_FILL
-            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fill,
-                                    outline='#dff4ff' if jelly else '')
+            if jelly:
+                # A bell, not a worm: a pale disc with its nerve ring, no skin dots.
+                rb = r * 1.4
+                fill = BODY_DEAD if entry.get('starved') else JELLY_FILL
+                self.canvas.create_oval(cx - rb, cy - rb, cx + rb, cy + rb, fill=fill,
+                                        outline='#dff4ff', width=2)
+                self.draw_ring(x, z, heading, rb, entry)
+                self.canvas.create_text(cx, cy - rb - 8, text='J' + str(creature.get('id')),
+                                        fill='#bfe6ff', font=('Consolas', 9, 'bold'))
+                continue
+            fill = BODY_DEAD if entry.get('starved') else BODY_FILL
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fill, outline='')
             # Nose, so the heading is readable at a glance.
             nx, nz = x + math.sin(heading) * self.length / 2, z + math.cos(heading) * self.length / 2
             ax, ay = self.to_screen(nx, nz)
             self.canvas.create_line(cx, cy, ax, ay, fill='#e6f2f7', width=2, arrow='last')
-            if jelly:
-                self.draw_ring(x, z, heading, r, entry)
 
             cr = max(2.0, self.cell_radius * scale)
             for i, cell in enumerate(creature.get('cells') or []):
@@ -668,17 +675,20 @@ class ViewerApp:
         rest = entry.get('rest') or []
         if len(ring) == 8:
             cx, cy = self.to_screen(x, z)
-            rr = r * 1.35
+            rr = r * 0.8
             for k, e in enumerate(ring):
                 a = heading + k * math.pi / 4.0            # ring cell 0 is straight ahead
                 px, py = cx + math.sin(a) * rr, cy - math.cos(a) * rr
                 if e >= 0.99:
-                    colour = '#fff3a0'
+                    colour, size = '#fff3a0', 5
                 elif k < len(rest) and rest[k] > 0:
-                    colour = '#3a5560'
+                    colour, size = '#2a4050', 4
                 else:
-                    colour = blend('#8fd3ff', 0.35 + 0.65 * float(e))
-                self.canvas.create_oval(px - 3, py - 3, px + 3, py + 3, fill=colour, outline='')
+                    colour, size = blend('#8fd3ff', 0.35 + 0.65 * float(e)), 4
+                self.canvas.create_oval(px - size, py - size, px + size, py + size, fill=colour, outline='#1b2a33')
+            # Straight ahead, so a pacemaker at the back reads as "swims this way".
+            hx, hy = cx + math.sin(heading) * r * 1.15, cy - math.cos(heading) * r * 1.15
+            self.canvas.create_line(cx, cy, hx, hy, fill='#e6f2f7', width=2, arrow='last')
         drift = entry.get('drift')
         if drift and len(drift) == 2 and (abs(drift[0]) > 1e-3 or abs(drift[1]) > 1e-3):
             cx, cy = self.to_screen(x, z)
