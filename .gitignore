@@ -11,3 +11,5 @@ user-layout.json.tmp
 *.egg-info/
 build/
 dist/
+
+brains/
