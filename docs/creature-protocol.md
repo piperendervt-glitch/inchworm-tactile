@@ -121,7 +121,7 @@
 
 - `arena.bounds` は `[minX, minZ, maxX, maxZ]`。スティグマジー場はこの矩形に貼る。
 - `arena.obstacles` は Brain の**再生シミュレータ用**。リアルタイム推論には使わない（生物は目が見えない）。
-- `pilot`（任意）: `{ "kind": "human" | "autopilot", "seed": 7, "sortie": 2 }`。誰が操縦したセッションかをログで区別するため。方策の入力には使わない。
+- `pilot`（任意）: `{ "kind": "human" | "autopilot", "seed": 7, "sortie": 2, "damageScale": 0.1 }`。`damageScale` は自機が受けるダメージの倍率（1 通常 / 0.1 で約 10 倍タフ / 0 で無敵、切り上げ）。自動出撃のときだけ 1 以外になる。誰が操縦したセッションかをログで区別するため。方策の入力には使わない。
 - `infestation`（任意）: `{ "wreckBites": 10, "mechSeconds": 8, "maxMechs": 2, "wreckOnKill": true }`。そのセッションのバランス設定。再生シミュレータを本編に合わせるため。
 - 無人の自動出撃（`-auto-sorties`）では、Body は各 tick の `observe` を送った後、その tick の `command` が届くまで待つ（lockstep、既定 250 ms で打ち切り）。ゲーム時間は実時間より速く進むが、Brain 側の処理は変わらない。人が操縦するときは待たない。
 - Brain は `hello` を受けたら当該 session の状態を初期化し `welcome` を返す。
