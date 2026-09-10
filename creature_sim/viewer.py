@@ -330,7 +330,10 @@ class FieldImage:
         floor_b = int(ARENA_FILL[5:7], 16)
         ramp = self.RAMP
         out = []
-        for row in range(self.rows):
+        # Field row 0 is the smallest Z, the far edge, but the first row
+        # string becomes the top of the picture and the arena is drawn with
+        # the largest Z at the top. So the rows go out last to first.
+        for row in range(self.rows - 1, -1, -1):
             base = row * self.cols
             cells = []
             for col in range(self.cols):

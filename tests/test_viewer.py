@@ -146,7 +146,8 @@ class FieldDecodeTests(unittest.TestCase):
         self.assertEqual(len(rows), 64)
 
         def colour(col, row):
-            return rows[row].strip('{}').split()[col]
+            # Field row 0 is the far edge and is painted last, at the bottom.
+            return rows[63 - row].strip('{}').split()[col]
 
         food = colour(food_col, food_row)
         path = colour(path_col, path_row)
@@ -156,6 +157,25 @@ class FieldDecodeTests(unittest.TestCase):
         self.assertLess(int(path[1:3], 16), int(path[5:7], 16))
         self.assertEqual(colour(path_col, food_row), ARENA_FILL)
         self.assertEqual(colour(0, 0), ARENA_FILL)
+
+    def test_the_picture_is_the_same_way_up_as_the_arena(self):
+        from creature_sim.viewer import ARENA_FILL, FieldImage
+
+        field = StigmergyField([-40.0, -40.0, 40.0, 40.0])
+        # Near the top edge of the arena (largest Z) and to the right.
+        field.deposit(30.0, 39.0, PATH, 4.0)
+        picture = FieldImage()
+        picture.update(protocol.make_field('s', 0, field, PATH, scale=4.0))
+        rows = picture.rows_of_colours().split('} {')
+
+        lit = [i for i, r in enumerate(rows)
+               if any(c != ARENA_FILL for c in r.strip('{}').split())]
+        # The first row string is the top of the picture, where the arena's
+        # top edge is drawn, so the trace must be in the first rows.
+        self.assertTrue(lit and max(lit) <= 1, f'trace landed in rows {lit}')
+        # And on the right-hand side.
+        cols = [i for i, c in enumerate(rows[lit[0]].strip('{}').split()) if c != ARENA_FILL]
+        self.assertGreater(min(cols), 50)
 
     def test_a_faint_trace_is_still_visible_against_the_floor(self):
         from creature_sim.viewer import ARENA_FILL, FieldImage
