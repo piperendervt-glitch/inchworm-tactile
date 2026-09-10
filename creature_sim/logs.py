@@ -93,14 +93,16 @@ class Session:
         player_out, world_out = [], []
         for row in self.rows():
             observe = row.get('observe') or {}
-            player = observe.get('player')
-            if not player:
+            if not observe:
                 continue
             t = float(row.get('t') or 0.0)
-            pos = player.get('pos') or [0.0, 0.0, 0.0]
-            player_out.append((t, float(pos[0]), float(pos[2]),
-                               float(player.get('heading') or 0.0),
-                               int(player.get('hp') or 0)))
+            player = observe.get('player')
+            # A ghost pilot is not reported at all; the world still is.
+            if player:
+                pos = player.get('pos') or [0.0, 0.0, 0.0]
+                player_out.append((t, float(pos[0]), float(pos[2]),
+                                   float(player.get('heading') or 0.0),
+                                   int(player.get('hp') or 0)))
             has_sounds = 'sounds' in observe
             world_out.append((t, list(observe.get('prey') or []),
                               list(observe.get('sounds') or []) if has_sounds else None))

@@ -180,7 +180,7 @@ Body は生物自身の移動を済ませて `speed` を確定した後、流れ
 - `arena.bounds` は `[minX, minZ, maxX, maxZ]`。スティグマジー場はこの矩形に貼る。
 - `arena.obstacles` は Brain の**再生シミュレータ用**。リアルタイム推論には使わない（生物は目が見えない）。
 - `pilot`（任意）: `{ "kind": "human" | "autopilot", "seed": 7, "sortie": 2, "damageScale": 0.1 }`。`damageScale` は自機が受けるダメージの倍率（1 通常 / 0.1 で約 10 倍タフ / 0 で無敵、切り上げ）。自動出撃のときだけ 1 以外になる。誰が操縦したセッションかをログで区別するため。方策の入力には使わない。
-- `infestation`（任意）: `{ "wreckBites": 10, "mechSeconds": 8, "maxMechs": 2, "wreckOnKill": true, "currentSpeed": 1, "currentPeriod": 90, "currentWobble": 0.4, "currentMix": 0.5, "laneSpeed": 2, "laneRadius": 0.65, "laneWidth": 0.08, "oneShotKills": true }`。そのセッションのバランス設定。再生シミュレータを本編に合わせるため。`current*` と `lane*` は §5.2 の流れ（`currentSpeed` 0 または欠落で渦なし、`laneSpeed` 0 で帯なし）。
+- `infestation`（任意）: `{ "wreckBites": 10, "mechSeconds": 8, "maxMechs": 2, "wreckOnKill": true, "currentSpeed": 1, "currentPeriod": 90, "currentWobble": 0.4, "currentMix": 0.5, "laneSpeed": 2, "laneRadius": 0.65, "laneWidth": 0.08, "oneShotKills": true, "mechBites": 10 }`（`mechBites` は生きた敵機を食べ尽くす口数）。そのセッションのバランス設定。再生シミュレータを本編に合わせるため。`current*` と `lane*` は §5.2 の流れ（`currentSpeed` 0 または欠落で渦なし、`laneSpeed` 0 で帯なし）。
 - 無人の自動出撃（`-auto-sorties`）では、Body は各 tick の `observe` を送った後、その tick の `command` が届くまで待つ（lockstep、既定 250 ms で打ち切り）。ゲーム時間は実時間より速く進むが、Brain 側の処理は変わらない。人が操縦するときは待たない。
 - Brain は `hello` を受けたら当該 session の状態を初期化し `welcome` を返す。
 
@@ -234,7 +234,7 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 | フィールド | 意味 |
 |---|---|
 | `t` | セッション開始からの秒 |
-| `player` | **Brain のログと学習にのみ使う。方策の入力に入れてはならない** |
+| `player` | **Brain のログと学習にのみ使う。方策の入力に入れてはならない**。自機を幽霊にした無人出撃（`-auto-pilot-off`）では**省略される**。Brain と観測画面は「自機なし」として扱う |
 | `creatures[].id` | Body が付与する 0 以上の整数。プール再利用時も同じ id を使ってよいが、`state` が `spawned` の tick で Brain は個体状態をリセットする |
 | `species` | `ecoli` / `jelly`。省略時 `ecoli`。Brain は種ごとに別のコロニーで扱う |
 | `state` | `spawned`（この tick で出現）/ `alive` / `dead`（この tick で死亡。次 tick から一覧に含めない） |

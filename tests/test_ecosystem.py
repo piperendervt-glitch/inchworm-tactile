@@ -106,6 +106,25 @@ class EcosystemTests(unittest.TestCase):
         source.close()
         self.assertEqual(Session(out).hello['pilot']['kind'], 'ecosystem')
 
+    def test_a_session_recorded_with_a_ghost_pilot_still_runs(self):
+        from creature_sim.server import SessionLog
+        from tests.test_replay import sample
+        log = SessionLog(self.tmp / 'ghost')
+        log.meta(sample('hello'), sample('welcome'))
+        wreck = dict(kind='wreck', id=0, pos=[3.0, 0.0, 3.0], hp=300, maxHp=300)
+        for tick in range(60):
+            log.write(dict(v=1, type='observe', session='s', tick=tick, t=tick / 30, dt=1 / 30,
+                           creatures=[], prey=[wreck], sounds=[]),
+                      dict(v=1, type='command', session='s', tick=tick, creatures=[]))
+        log.close()
+        self.assertEqual(Session(self.tmp / 'ghost').player_track(), [])
+        self.assertEqual(len(Session(self.tmp / 'ghost').world_track()), 60, 'the world is still read')
+        world = Ecosystem(self.tmp / 'ghost', brain=EcoliBrain(seed=1), seed=2, ecoli=2, jelly=2)
+        self.assertFalse(world.pilot)
+        world.run(3.0)
+        self.assertEqual(len(world.prey), 1, 'the recorded wreck is there')
+        self.assertNotIn('player', world.rows[0]['observe'])
+
     def test_a_run_with_no_pilot_has_no_player_and_still_runs(self):
         world = Ecosystem(self.session, brain=EcoliBrain(seed=1), seed=2, pilot=False)
         result = world.run(2.0)

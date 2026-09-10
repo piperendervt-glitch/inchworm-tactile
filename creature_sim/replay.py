@@ -65,11 +65,15 @@ class ReplayWorld:
     """A colony let loose in a recorded arena, chasing a recorded pilot."""
 
     def __init__(self, session, brain=None, count=6, seed=0, hz=30,
-                 settings=None, cols=64, rows=64):
+                 settings=None, cols=64, rows=64, require_pilot=True):
         self.session = session if isinstance(session, Session) else Session(session)
         self.track = self.session.player_track()
         if not self.track:
-            raise ValueError('the session has no player track to chase')
+            if require_pilot:
+                raise ValueError('the session has no player track to chase')
+            # No pilot was reported (a ghost): park a stand-in far outside the arena.
+            far = max(abs(v) for v in self.session.bounds) * 4.0
+            self.track = [(0.0, far, far, 0.0, 0)]
         self.bounds = self.session.bounds
         self.obstacles = self.session.obstacles
         body = self.session.body

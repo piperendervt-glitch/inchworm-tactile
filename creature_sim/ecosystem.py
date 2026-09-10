@@ -63,7 +63,11 @@ class Ecosystem(ReplayWorld):
         self.saved = lineage.load(lineage_path) if lineage_path else dict(ecoli=[], jelly=[])
         self.jelly_settings = dict(jelly_settings or {})
         # ReplayWorld places `count` E. coli; we place both kinds ourselves.
-        super().__init__(session, brain=brain, count=0, seed=seed, hz=hz, settings=settings)
+        super().__init__(session, brain=brain, count=0, seed=seed, hz=hz, settings=settings,
+                         require_pilot=False)
+        # A session recorded with a ghost pilot has no track; then there is no pilot here either.
+        if not self.session.player_track():
+            self.pilot = False
         self.colony.founders = [dict(f['genome']) for f in self.saved['ecoli']]
         jelly_body = self.session.hello.get('jelly') or {}
         self.jellies = JellyColony(field=self.field, seed=seed,
@@ -289,6 +293,8 @@ class Ecosystem(ReplayWorld):
         self.time += self.dt
 
     def run(self, seconds):
+        # Unlike a replay, a run is not cut at the recording's end: the
+        # recorded world is held at its last state and life goes on.
         steps = max(0, int(round(seconds * self.hz)))
         for _ in range(steps):
             self.step()
