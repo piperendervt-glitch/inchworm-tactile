@@ -270,6 +270,7 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 | `deposit` | float | 0..1 | スティグマジー書き込み強度。Body は表示にだけ使う（場は Brain 側） |
 | `energy` | float | 0..1 | 表示用。エネルギー残量比 |
 | `starved` | bool | | true なら Body はその個体を `reason: "starved"` で殺す |
+| `ring` / `rest` / `drift` | 任意 | | クラゲにだけ付く観測画面用の付録: 神経リング 8 セルの興奮（0..1）、不応期の残り tick、蓄積した推進の向き `[vx, vz]`。**Body は無視する** |
 | `divide` | bool | | true なら Body は同じ種の子を隣に出現させる（`observe` に `state: spawned, parent: id` で現れる）。プールが満杯なら何も起きず、Brain は子が現れないことでそれを知る。省略時 false |
 
 - Body は **最後に受け取った `command` を次が来るまで保持**して適用する。tick が既知より古い `command` は捨てる。
