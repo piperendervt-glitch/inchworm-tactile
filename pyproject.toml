@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "creature_sim"
+version = "0.1.0"
+description = "触覚とスティグマジーで動く人工生物のシミュレーションと学習"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# GUI は tkinter（標準ライブラリ）のみを使うため追加依存はない。
+# 明示的に選べるよう空のグループとして残す。
+gui = []
+# シャクトリムシ側（ルート直下の app.py / locomotion.py / renderer3d.py）用。
+# creature_sim パッケージ本体はこれらに依存しない。
+worm = ["panda3d==1.10.16", "Pillow==12.2.0"]
+
+[project.scripts]
+creature-trials = "creature_sim.ecoli.trials:main"
+
+[tool.setuptools.packages.find]
+include = ["creature_sim*"]
+
+[tool.setuptools.package-data]
+creature_sim = ["ecoli/*.json"]

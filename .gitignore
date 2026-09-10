@@ -7,3 +7,7 @@ checkpoints/
 
 user-layout.json
 user-layout.json.tmp
+
+*.egg-info/
+build/
+dist/

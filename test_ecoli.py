@@ -4,8 +4,8 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
-from ecoli.core import World,DT,config
-from ecoli.trials import Trials,seeds_from_text
+from creature_sim.ecoli.core import World,DT,config
+from creature_sim.ecoli.trials import Trials,seeds_from_text
 
 class EcoliTests(unittest.TestCase):
     def test_seed_reproducibility_layout_fairness_no_learning(self):

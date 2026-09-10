@@ -7,7 +7,7 @@
 画面から餌の個数と初期姿勢のランダム化を変更できます。固定objectsを読み込んだ場合はJSONの餌位置・個数が優先され、個数欄はランダム配置時のみ有効です。餌を消費するとその餌の濃度も減り、無限には補充しません。初回摂食までの時間はsummaryのfirst_food_s列に保存し、未摂食ならnull／CSV空欄です。
 
 ```powershell
-.\.venv\Scripts\python.exe -m ecoli.trials --environment food_only --seeds 0,1,2,3,4 --seconds 60 --layout-seed 7 --output sessions/ecoli/food-trial
+.\.venv\Scripts\python.exe -m creature_sim.ecoli.trials --environment food_only --seeds 0,1,2,3,4 --seconds 60 --layout-seed 7 --output sessions/ecoli/food-trial
 ```
 
 環境追加の段階であり、学習による重み更新はまだありません。学習OFFの基準結果として保存します。設定例はfood_only.json、以前の混合環境はmixed.jsonです。
@@ -34,8 +34,8 @@
 GUIの結果は `sessions/ecoli/日時/` に自動保存。seedごとの時系列CSVと初期設定JSON、比較用summary.csv/jsonを出力します。中断時はinterrupted.jsonを残し、途中の個体を完了扱いにしません。既存の結果フォルダを上書きしません。
 
 ```powershell
-.\.venv\Scripts\python.exe -m ecoli.trials --seeds 0,1,2,17,18 --seconds 120 --layout-seed 7 --output sessions/ecoli/run-120s
-.\.venv\Scripts\python.exe -m ecoli.trials --config ecoli/config.json --seeds 0,1,2 --seconds 60 --output sessions/ecoli/custom-run
+.\.venv\Scripts\python.exe -m creature_sim.ecoli.trials --seeds 0,1,2,17,18 --seconds 120 --layout-seed 7 --output sessions/ecoli/run-120s
+.\.venv\Scripts\python.exe -m creature_sim.ecoli.trials --config creature_sim/ecoli/config.json --seeds 0,1,2 --seconds 60 --output sessions/ecoli/custom-run
 .\.venv\Scripts\python.exe -m unittest test_ecoli -v
 ```
 

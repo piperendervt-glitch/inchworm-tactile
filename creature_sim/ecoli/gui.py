@@ -9,7 +9,7 @@ from tkinter import ttk,messagebox,filedialog
 from .core import DT,DEFAULT
 from .trials import Trials,seeds_from_text
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 
 class App:
     def __init__(self):

@@ -1,4 +1,4 @@
-大腸菌のseed固定時間実験は **run_ecoli.bat** で起動します。[操作説明](ecoli/README.md)。
+大腸菌のseed固定時間実験は **run_ecoli.bat** で起動します。[操作説明](creature_sim/ecoli/README.md)。
 
 # Inchworm Tactile — 3節・2関節の未学習個体
 

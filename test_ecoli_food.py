@@ -1,5 +1,5 @@
 import unittest
-from ecoli.core import World,config
+from creature_sim.ecoli.core import World,config
 
 class FoodEnvironmentTests(unittest.TestCase):
     def test_food_only_random_layout_is_shared_and_reproducible(self):
