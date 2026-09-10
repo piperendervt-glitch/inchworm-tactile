@@ -115,8 +115,9 @@ class BrainServer:
                  mirror=None, lineage_path=None, log_every=1):
         self.mirror = parse_endpoint(mirror) if isinstance(mirror, str) else mirror
         # Log one tick in this many. A session that runs for hours would
-        # otherwise fill the disk at about 10 MB a game minute.
-        self.log_every = max(1, int(log_every))
+        # otherwise fill the disk at about 10 MB a game minute. Zero keeps no
+        # ticks at all: only the session's meta, summary and lineage.
+        self.log_every = max(0, int(log_every))
         # Where survivors' genes are kept between sessions. None keeps nothing.
         self.lineage_path = Path(lineage_path) if lineage_path else None
         self.port = port
@@ -155,6 +156,10 @@ class BrainServer:
             print(*parts, flush=True)
 
     def close_session(self, reason):
+        # With no ticks kept, the folder is still made so the summary and the
+        # lineage have somewhere to go, but only once something was observed.
+        if self.log and not self.log.started and self.log_every == 0 and self.observed > 0:
+            self.log._open()
         if self.log and self.log.started:
             summary = self.colony.summary() if self.colony else {}
             if self.jellies:
@@ -252,7 +257,7 @@ class BrainServer:
             # Round robin, so every channel reaches the watcher in turn.
             self.field_channel = (self.field_channel + 1) % self.field.channels
 
-        if self.log and (self.observed % self.log_every == 1 or self.log_every == 1):
+        if self.log and self.log_every > 0 and (self.log_every == 1 or self.observed % self.log_every == 1):
             self.log.write(message, command, field)
         return [command] if field is None else [command, field]
 
@@ -386,7 +391,8 @@ def main(argv=None):
     p.add_argument('--lineage', default=str(ROOT / 'brains' / 'lineage.json'),
                    help="survivors' genes, carried from one session to the next")
     p.add_argument('--no-lineage', action='store_true', help='start every session from the norm')
-    p.add_argument('--log-every', type=int, default=1, help='log one tick in N (for sessions that run for hours)')
+    p.add_argument('--log-every', type=int, default=1,
+                   help='log one tick in N (for sessions that run for hours); 0 keeps no ticks, only summary and lineage')
     p.add_argument('--quiet', action='store_true')
     a = p.parse_args(argv)
     server = BrainServer(port=a.port, host=a.host, seed=a.seed, brain_path=a.brain,

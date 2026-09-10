@@ -65,6 +65,19 @@ class LineageFileTests(unittest.TestCase):
         self.assertEqual(lineage.load(self.path)['ecoli'], [])
         self.assertIn('extinct', lineage.load(self.path))
 
+    def test_the_server_can_keep_no_ticks_and_still_save_the_lineage(self):
+        from creature_sim.server import BrainServer
+        server = BrainServer(sessions_dir=self.tmp / 'sessions', quiet=True,
+                             lineage_path=self.path, log_every=0)
+        server.handle(dict(v=1, type='hello', session='y', tick=0, body={}, arena=dict(bounds=BOUNDS)))
+        for tick in range(20):
+            server.handle(observe(tick, [creature(state='spawned' if tick == 0 else 'alive')], session='y'))
+        folder = server.log.directory
+        server.handle(dict(v=1, type='bye', session='y', tick=20, reason='mission_end'))
+        self.assertEqual((folder / 'link.jsonl').read_text(encoding='utf-8'), '', 'no ticks kept')
+        self.assertTrue((folder / 'summary.json').exists())
+        self.assertEqual(len(lineage.load(self.path)['ecoli']), 1)
+
     def test_founders_come_from_the_file_and_are_mutated_once(self):
         saved = dict(ecoli=[dict(genome=dict(speed=0.5, metab=1.5, satiety=0.9, tumble=2.0))],
                      jelly=[dict(genome=dict(speed=0.5, metab=1.5, satiety=0.9, pace=60.0, suck=1.5, noci=0.5),
