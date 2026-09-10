@@ -57,22 +57,39 @@ def parse_endpoint(text):
 
 
 class SessionLog:
-    """Minimal per-tick record. The real log format comes in a later stage."""
+    """Minimal per-tick record. The real log format comes in a later stage.
+
+    Nothing reaches the disk until the first observe. A Body that says hello
+    and then goes away, which a run of the Unity tests does thousands of times,
+    would otherwise leave an empty session behind for the learning phase to
+    trip over.
+    """
 
     def __init__(self, directory):
         self.directory = Path(directory)
-        self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / 'link.jsonl'
-        self.file = self.path.open('w', encoding='utf-8')
+        self.file = None
         self.ticks = 0
+        self.pending = None
+
+    @property
+    def started(self):
+        return self.file is not None
 
     def meta(self, hello, welcome):
-        (self.directory / 'meta.json').write_text(
-            json.dumps(dict(schema=1, hello=hello, welcome=welcome,
-                            started=datetime.datetime.now().isoformat(timespec='seconds')),
-                       indent=1) + '\n', encoding='utf-8')
+        self.pending = dict(schema=1, hello=hello, welcome=welcome,
+                            started=datetime.datetime.now().isoformat(timespec='seconds'))
+
+    def _open(self):
+        self.directory.mkdir(parents=True, exist_ok=True)
+        if self.pending is not None:
+            (self.directory / 'meta.json').write_text(
+                json.dumps(self.pending, indent=1) + '\n', encoding='utf-8')
+        self.file = self.path.open('w', encoding='utf-8')
 
     def write(self, observation, command, field=None):
+        if self.file is None:
+            self._open()
         row = dict(tick=observation.get('tick'), t=observation.get('t'),
                    observe=observation, command=command)
         if field is not None:
@@ -129,7 +146,7 @@ class BrainServer:
             print(*parts, flush=True)
 
     def close_session(self, reason):
-        if self.log:
+        if self.log and self.log.started:
             summary = self.colony.summary() if self.colony else {}
             (self.log.directory / 'summary.json').write_text(
                 json.dumps(dict(reason=reason, ticks=self.log.ticks,
@@ -263,8 +280,17 @@ class BrainServer:
 
     def serve(self, seconds=None, ready=None):
         self.socket = shield(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.bind((self.host, self.port))
+        # No SO_REUSEADDR. On Windows it lets a second server bind the same UDP
+        # port without complaint, and the two then split the incoming datagrams
+        # between them, which looks exactly like a Body that has half its
+        # messages ignored. Better that a duplicate refuses to start.
+        try:
+            self.socket.bind((self.host, self.port))
+        except OSError as error:
+            self.socket.close()
+            self.socket = None
+            raise SystemExit(f'[error] cannot listen on {self.host}:{self.port} '
+                             f'({error}); is another server already running?')
         self.socket.settimeout(0.25)
         self.port = self.socket.getsockname()[1]
         self.say(f'[listen] udp {self.host}:{self.port} '
