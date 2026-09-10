@@ -62,7 +62,10 @@ def record(path, brain_path, sessions=None, creatures=6, trials=2, seconds=None,
                  contact_s=round(stats['contact_s'], 3),
                  time=(now or datetime.datetime.now()).isoformat(timespec='seconds'))
 
-    history = [h for h in data.get('history', []) if h.get('fingerprint') != entry['fingerprint']]
+    # One entry per generation. A generation whose training found nothing
+    # better has its parent's weights, and still gets its own bar.
+    history = [h for h in data.get('history', [])
+               if (h.get('generation'), h.get('fingerprint')) != (entry['generation'], entry['fingerprint'])]
     history.append(entry)
     data['history'] = history
     data.setdefault('start', entry)

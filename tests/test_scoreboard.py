@@ -50,6 +50,20 @@ class ScoreboardTests(unittest.TestCase):
         self.assertEqual(a['fitness'], b['fitness'], 'the benchmark should be repeatable')
         self.assertEqual(len(scoreboard.load(self.scores)['history']), 1)
 
+    def test_a_generation_that_learned_nothing_still_gets_its_own_entry(self):
+        parent = self.brain(1, 5)
+        scoreboard.record(self.scores, parent, [self.session], creatures=3, trials=1, seconds=3.0)
+        # Same weights, next generation number: what training writes when no candidate beat the parent.
+        same = self.tmp / 'gen-6.json'
+        data = json.loads(parent.read_text(encoding='utf-8'))
+        data['generation'] = 6
+        same.write_text(json.dumps(data), encoding='utf-8')
+        scoreboard.record(self.scores, same)
+        record = scoreboard.load(self.scores)
+        self.assertEqual([h['generation'] for h in record['history']], [5, 6])
+        self.assertEqual(record['start']['generation'], 5)
+        self.assertEqual(record['latest']['generation'], 6)
+
     def test_no_benchmark_without_sessions(self):
         with self.assertRaises(ValueError):
             scoreboard.record(self.scores, self.brain(1, 5))
