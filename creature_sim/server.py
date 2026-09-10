@@ -30,6 +30,32 @@ FIELD_PERIOD = 0.5
 FIELD_SCALE = 4.0
 
 
+def shield(sock):
+    """Stop a refused datagram from poisoning the socket that sent it.
+
+    On Windows an unreachable destination comes back as ICMP, and the next
+    recvfrom on that socket raises ConnectionResetError even though nothing is
+    wrong with the socket. Left alone it would let a watcher that has been
+    closed take the server down with it.
+    """
+    if hasattr(socket, 'SIO_UDP_CONNRESET'):
+        try:
+            sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+        except OSError:
+            pass
+    return sock
+
+
+def parse_endpoint(text):
+    """\"host:port\" or bare \"port\" into an address tuple."""
+    if not text:
+        return None
+    if ':' in text:
+        host, _, port = text.rpartition(':')
+        return (host or '127.0.0.1', int(port))
+    return ('127.0.0.1', int(text))
+
+
 class SessionLog:
     """Minimal per-tick record. The real log format comes in a later stage."""
 
@@ -46,12 +72,16 @@ class SessionLog:
                             started=datetime.datetime.now().isoformat(timespec='seconds')),
                        indent=1) + '\n', encoding='utf-8')
 
-    def write(self, observation, command):
-        self.file.write(json.dumps(dict(tick=observation.get('tick'),
-                                        t=observation.get('t'),
-                                        observe=observation, command=command),
-                                   separators=(',', ':')))
+    def write(self, observation, command, field=None):
+        row = dict(tick=observation.get('tick'), t=observation.get('t'),
+                   observe=observation, command=command)
+        if field is not None:
+            row['field'] = field
+        self.file.write(json.dumps(row, separators=(',', ':')))
         self.file.write('\n')
+        # Flushed every tick so a viewer tailing the file stays in step with
+        # the run instead of lagging a buffer behind.
+        self.file.flush()
         self.ticks += 1
 
     def close(self):
@@ -61,7 +91,9 @@ class SessionLog:
 
 class BrainServer:
     def __init__(self, port=DEFAULT_PORT, host='0.0.0.0', seed=0, brain_path=None,
-                 cols=64, rows=64, max_creatures=12, sessions_dir=None, quiet=False):
+                 cols=64, rows=64, max_creatures=12, sessions_dir=None, quiet=False,
+                 mirror=None):
+        self.mirror = parse_endpoint(mirror) if isinstance(mirror, str) else mirror
         self.port = port
         self.host = host
         self.seed = seed
@@ -74,6 +106,7 @@ class BrainServer:
                       else EcoliBrain(seed=seed))
         self.brain_path = brain_path
         self.socket = None
+        self.mirror_socket = None
         self.reset()
 
     # -- session state --------------------------------------------------
@@ -88,6 +121,8 @@ class BrainServer:
         self.field_channel = FOOD
         self.observed = 0
         self.dropped = 0
+        self.mirrored = 0
+        self.mirrored_failures = 0
 
     def say(self, *parts):
         if not self.quiet:
@@ -99,6 +134,8 @@ class BrainServer:
             (self.log.directory / 'summary.json').write_text(
                 json.dumps(dict(reason=reason, ticks=self.log.ticks,
                                 observed=self.observed, dropped=self.dropped,
+                                mirrored=self.mirrored,
+                                mirror_failures=self.mirrored_failures,
                                 colony=summary), indent=1) + '\n', encoding='utf-8')
             self.say(f'[session] closed ({reason}) after {self.log.ticks} ticks -> {self.log.directory}')
             self.log.close()
@@ -152,19 +189,20 @@ class BrainServer:
         command = self.colony.step(message)
         command = protocol.make_command(self.session, command['tick'], command['creatures'])
         self.observed += 1
-        if self.log:
-            self.log.write(message, command)
 
-        out = [command]
+        field = None
         now = float(message.get('t', 0.0))
         if now - self.last_field >= FIELD_PERIOD:
             self.last_field = now
-            out.append(protocol.make_field(self.session, command['tick'], self.field,
-                                           self.field_channel, FIELD_SCALE))
+            field = protocol.make_field(self.session, command['tick'], self.field,
+                                        self.field_channel, FIELD_SCALE)
             # Alternate so both channels reach the overlay without doubling
             # the traffic on any one tick.
             self.field_channel = PATH if self.field_channel == FOOD else FOOD
-        return out
+
+        if self.log:
+            self.log.write(message, command, field)
+        return [command] if field is None else [command, field]
 
     def handle(self, message):
         kind = message.get('type')
@@ -197,14 +235,41 @@ class BrainServer:
             return
         self.socket.sendto(payload, address)
 
+    def mirror_send(self, messages):
+        """Copy traffic to a watcher. Send-and-forget: nothing is expected back.
+
+        Called only after the Body has been answered, so a watcher can never
+        delay the game loop. A watcher that is not running costs one refused
+        datagram, which UDP discards silently.
+        """
+        if not self.mirror:
+            return
+        # A socket of its own, so a refused copy can never disturb the one
+        # that talks to the Body.
+        if self.mirror_socket is None:
+            self.mirror_socket = shield(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
+        for message in messages:
+            try:
+                payload = protocol.encode(message)
+            except protocol.ProtocolError:
+                continue
+            try:
+                self.mirror_socket.sendto(payload, self.mirror)
+            except OSError:
+                # A watcher that has gone away must not take the server with it.
+                self.mirrored_failures += 1
+                return
+            self.mirrored += 1
+
     def serve(self, seconds=None, ready=None):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket = shield(socket.socket(socket.AF_INET, socket.SOCK_DGRAM))
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.host, self.port))
         self.socket.settimeout(0.25)
         self.port = self.socket.getsockname()[1]
         self.say(f'[listen] udp {self.host}:{self.port} '
-                 f"brain={'file ' + str(self.brain_path) if self.brain_path else 'seed ' + str(self.seed)}")
+                 f"brain={'file ' + str(self.brain_path) if self.brain_path else 'seed ' + str(self.seed)}"
+                 + (f' mirror={self.mirror[0]}:{self.mirror[1]}' if self.mirror else ''))
         if ready is not None:
             ready.set()
 
@@ -215,6 +280,9 @@ class BrainServer:
                     payload, address = self.socket.recvfrom(65535)
                 except socket.timeout:
                     continue
+                except ConnectionResetError:
+                    # A previous send was refused. Nothing is wrong here.
+                    continue
                 except OSError:
                     break
                 message = protocol.parse(payload)
@@ -223,14 +291,21 @@ class BrainServer:
                     self.send(message, address)
                     continue
                 self.peer = address
-                for reply in self.handle(message):
+                replies = self.handle(message)
+                for reply in replies:
                     self.send(reply, address)
+                # Strictly after the Body has its answer.
+                if message.get('type') in ('hello', 'observe', 'bye'):
+                    self.mirror_send([message] + replies)
         except KeyboardInterrupt:
             self.say('[stop] interrupted')
         finally:
             self.close_session('server_stop')
             self.socket.close()
             self.socket = None
+            if self.mirror_socket is not None:
+                self.mirror_socket.close()
+                self.mirror_socket = None
 
 
 def main(argv=None):
@@ -244,12 +319,14 @@ def main(argv=None):
     p.add_argument('--rows', type=int, default=64)
     p.add_argument('--max-creatures', type=int, default=12)
     p.add_argument('--sessions', help='where to write session logs')
+    p.add_argument('--mirror', metavar='HOST:PORT',
+                   help='send a copy of observe, command and field to a watcher')
     p.add_argument('--seconds', type=float, help='stop after this long (for tests)')
     p.add_argument('--quiet', action='store_true')
     a = p.parse_args(argv)
     server = BrainServer(port=a.port, host=a.host, seed=a.seed, brain_path=a.brain,
                          cols=a.cols, rows=a.rows, max_creatures=a.max_creatures,
-                         sessions_dir=a.sessions, quiet=a.quiet)
+                         sessions_dir=a.sessions, quiet=a.quiet, mirror=a.mirror)
     server.serve(seconds=a.seconds)
     return 0
 
