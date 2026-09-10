@@ -576,6 +576,7 @@ class ViewerApp:
         c.delete('all')
         self.draw_field()
         self.draw_arena()
+        self.draw_current()
         if self.frame is not None:
             self.draw_prey()
             self.draw_creatures()
@@ -653,6 +654,31 @@ class ViewerApp:
                                         fill=colour, outline='')
             self.canvas.create_text(cx, cy - r - 8, text=str(creature.get('id')),
                                     fill=DIM, font=('Consolas', 9))
+
+    def draw_current(self):
+        """Arrows for the current the session was played with; longer is faster."""
+        from . import current
+        settings = current.from_hello(self.hello)
+        if not settings:
+            return
+        t = float(self.frame.t or 0.0) if self.frame is not None else 0.0
+        min_x, min_z, max_x, max_z = self.bounds
+        top = max(1e-6, current.top_speed(settings))
+        grid = 9
+        longest = (max_x - min_x) / grid * 0.8
+        for row in range(grid):
+            for col in range(grid):
+                x = min_x + (max_x - min_x) * (col + 0.5) / grid
+                z = min_z + (max_z - min_z) * (row + 0.5) / grid
+                vx, vz = current.velocity(x, z, t, self.bounds, **settings)
+                size = math.hypot(vx, vz)
+                if size < 1e-6:
+                    continue
+                length = longest * min(1.0, size / top)
+                ux, uz = vx / size, vz / size
+                ax, ay = self.to_screen(x - ux * length / 2, z - uz * length / 2)
+                bx, by = self.to_screen(x + ux * length / 2, z + uz * length / 2)
+                self.canvas.create_line(ax, ay, bx, by, fill='#3f8fb0', width=1, arrow='last')
 
     def draw_prey(self):
         """Food other than the pilot: a triangle for a mech, a slab for a wreck, with an HP bar."""

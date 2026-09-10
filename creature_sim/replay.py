@@ -14,7 +14,7 @@ responding can be learned here.
 import math
 import random
 
-from . import hearing
+from . import current, hearing
 from .ecoli.brain import EcoliBrain
 from .ecoli.colony import Colony
 from .field import StigmergyField
@@ -92,6 +92,8 @@ class ReplayWorld:
         self.tick = 0
         self.time = 0.0
         self.player = (self.track[0][1], self.track[0][2])
+        # The current the session was played with, if any. It carries only creatures.
+        self.current = current.from_hello(self.session.hello)
         self.world = self.session.world_track()
         self._world_cursor = 0
         self.player_speed = 0.0
@@ -209,25 +211,37 @@ class ReplayWorld:
                                 heading=0.0, hp=250, guard=False),
                     creatures=creatures, sounds=list(self.sounds), prey=list(self.prey))
 
+    def _slide(self, body, dx, dz):
+        """Move in small steps until something is in the way. Returns (metres moved, blocked)."""
+        moved = 0.0
+        steps = max(1, math.ceil(math.hypot(dx, dz) / (self.radius * 0.25)))
+        for _ in range(steps):
+            nx, nz = body.x + dx / steps, body.z + dz / steps
+            if self._blocked(nx, nz, self.radius):
+                return moved, True
+            moved += math.hypot(nx - body.x, nz - body.z)
+            body.x, body.z = nx, nz
+        return moved, False
+
     def advance(self, body):
         dt = self.dt
         if body.mode == 'tumble':
             body.heading += body.turn * dt
             body.heading = (body.heading + math.pi) % (2 * math.pi) - math.pi
             body.speed = 0.0
-            return
-        target = self.run_speed * body.command_speed if body.mode == 'run' else 0.0
-        body.speed += (target - body.speed) * (1.0 - math.exp(-5.0 * dt))
-        dx = body.speed * dt * math.sin(body.heading)
-        dz = body.speed * dt * math.cos(body.heading)
-        steps = max(1, math.ceil(math.hypot(dx, dz) / (self.radius * 0.25)))
-        for _ in range(steps):
-            nx, nz = body.x + dx / steps, body.z + dz / steps
-            if self._blocked(nx, nz, self.radius):
+        else:
+            target = self.run_speed * body.command_speed if body.mode == 'run' else 0.0
+            body.speed += (target - body.speed) * (1.0 - math.exp(-5.0 * dt))
+            dx = body.speed * dt * math.sin(body.heading)
+            dz = body.speed * dt * math.cos(body.heading)
+            moved, blocked = self._slide(body, dx, dz)
+            body.path += moved
+            if blocked:
                 body.speed = 0.0
-                break
-            body.path += math.hypot(nx - body.x, nz - body.z)
-            body.x, body.z = nx, nz
+        if self.current:
+            # Carried after its own move, as in the game. Not its own speed or path.
+            vx, vz = current.velocity(body.x, body.z, self.time, self.bounds, **self.current)
+            self._slide(body, vx * dt, vz * dt)
 
     def player_at(self, seconds):
         """Where the pilot was, held at the ends rather than looping."""
