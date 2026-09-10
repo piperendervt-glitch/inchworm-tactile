@@ -370,8 +370,11 @@ class ViewerApp:
     MAP = 640
     PANEL = 300
     HEIGHT = 680
+    # Extra height for the learning score, only when there is one to show.
+    SCORE_ROOM = 190
 
-    def __init__(self, source, hello=None, speed=1, title='Creature Viewer'):
+    def __init__(self, source, hello=None, speed=1, title='Creature Viewer',
+                 scores=None, status=None, learner=None):
         import tkinter as tk
 
         self.tk = tk
@@ -390,6 +393,17 @@ class ViewerApp:
         self.seeking = False
         self.frames_seen = 0
         self.view = 0
+
+        # A learning run's scores and progress, when the autoloop started us.
+        self.scores_path = Path(scores) if scores else None
+        self.status_path = Path(status) if status else None
+        self.learner_path = Path(learner) if learner else None
+        self.scores = {}
+        self.run_status = {}
+        self.learner_status = {}
+        self.scores_read = 0.0
+        if self.scores_path is not None:
+            self.HEIGHT = ViewerApp.HEIGHT + self.SCORE_ROOM
 
         self.window = tk.Tk()
         self.window.title(title)
@@ -516,8 +530,19 @@ class ViewerApp:
                 (self.length, self.radius,
                  self.cell_radius, self.max_health) = body_from_hello(self.hello)
 
+        self.refresh_scores(now)
         self.render()
         self.window.after(33, self.update)
+
+    def refresh_scores(self, now):
+        """Re-read the run's score and status files every two seconds."""
+        if self.scores_path is None or now - self.scores_read < 2.0:
+            return
+        self.scores_read = now
+        from . import scoreboard
+        self.scores = scoreboard.load(self.scores_path)
+        self.run_status = scoreboard.load(self.status_path) if self.status_path else {}
+        self.learner_status = scoreboard.load(self.learner_path) if self.learner_path else {}
 
     # -- drawing --------------------------------------------------------
 
@@ -726,10 +751,47 @@ class ViewerApp:
                           font=('Consolas', 8))
             y += 15
 
+        if self.scores_path is not None:
+            self.draw_scores(x, ViewerApp.HEIGHT)
+
         keys = ('space pause  arrows step  1-9,0 speed  f traces' if self.replay
                 else 'space hold  f traces')
         c.create_text(x, self.HEIGHT - 18, text=keys, anchor='w', fill='#4c6373',
                       font=('Consolas', 8))
+
+    def draw_scores(self, x, y):
+        """Start, latest and best benchmark score, a bar per generation, and what is running."""
+        from . import scoreboard
+        c = self.canvas
+        jp = ('Yu Gothic UI', 10)
+        c.create_line(x, y - 14, x + self.PANEL - 32, y - 14, fill='#25323d')
+        c.create_text(x, y, text='学習スコア（固定ベンチマーク）', anchor='w', fill=TEXT,
+                      font=('Yu Gothic UI', 10, 'bold'))
+        y += 20
+        for line in scoreboard.summary_lines(self.scores):
+            c.create_text(x, y, text=line, anchor='w', fill=DIM, font=jp)
+            y += 17
+
+        values = [h.get('fitness', 0.0) for h in self.scores.get('history', [])][-24:]
+        if values:
+            top = max(values)
+            low = min(0.0, min(values))
+            span = max(1e-9, top - low)
+            width = self.PANEL - 32
+            step = width / max(len(values), 1)
+            base = y + 34
+            for i, value in enumerate(values):
+                height = 30 * (value - low) / span
+                last = i == len(values) - 1
+                c.create_rectangle(x + i * step + 1, base - height, x + (i + 1) * step - 1, base,
+                                   fill='#8fd06a' if last else '#4f7a45', outline='')
+            y = base + 12
+
+        for label, status in (('出撃', self.run_status), ('学習', self.learner_status)):
+            if status:
+                text = f'{label}: {status.get("state", "")} {status.get("detail", "")}'.strip()
+                c.create_text(x, y, text=text[:40], anchor='w', fill=DIM, font=jp)
+                y += 16
 
     def status_text(self):
         if self.frame is None:
@@ -753,6 +815,9 @@ def main(argv=None):
     group.add_argument('--log', help='a session directory or link.jsonl to replay')
     p.add_argument('--hello', help='hello.json for the arena when listening')
     p.add_argument('--speed', type=int, default=1, help='replay speed, 1 to 20')
+    p.add_argument('--scores', help="a learning run's scores.json, shown under the panel")
+    p.add_argument('--status', help="the run's status.json (what is flying)")
+    p.add_argument('--learner', help="the run's learner.json (what is training)")
     a = p.parse_args(argv)
 
     if a.log:
@@ -765,7 +830,8 @@ def main(argv=None):
         title = f'Creature Viewer - live :{source.port}'
         print(f'[viewer] listening on udp {source.port}', flush=True)
 
-    ViewerApp(source, hello=hello, speed=max(1, min(20, a.speed)), title=title).run()
+    ViewerApp(source, hello=hello, speed=max(1, min(20, a.speed)), title=title,
+              scores=a.scores, status=a.status, learner=a.learner).run()
     return 0
 
 
