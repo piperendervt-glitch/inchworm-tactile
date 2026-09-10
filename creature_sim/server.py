@@ -21,6 +21,7 @@ from pathlib import Path
 from .ecoli.brain import EcoliBrain
 from .ecoli.colony import Colony
 from .field import CHANNELS, FOOD, StigmergyField
+from .jelly.colony import JellyColony
 from . import protocol
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,7 +111,7 @@ class SessionLog:
 
 class BrainServer:
     def __init__(self, port=DEFAULT_PORT, host='0.0.0.0', seed=0, brain_path=None,
-                 cols=64, rows=64, max_creatures=12, sessions_dir=None, quiet=False,
+                 cols=64, rows=64, max_creatures=32, sessions_dir=None, quiet=False,
                  mirror=None):
         self.mirror = parse_endpoint(mirror) if isinstance(mirror, str) else mirror
         self.port = port
@@ -133,6 +134,7 @@ class BrainServer:
     def reset(self):
         self.session = None
         self.colony = None
+        self.jellies = None
         self.field = None
         self.log = None
         self.peer = None
@@ -150,6 +152,8 @@ class BrainServer:
     def close_session(self, reason):
         if self.log and self.log.started:
             summary = self.colony.summary() if self.colony else {}
+            if self.jellies:
+                summary['jellies'] = self.jellies.summary()
             (self.log.directory / 'summary.json').write_text(
                 json.dumps(dict(reason=reason, ticks=self.log.ticks,
                                 observed=self.observed, dropped=self.dropped,
@@ -180,6 +184,11 @@ class BrainServer:
         self.field = StigmergyField(bounds, cols=self.cols, rows=self.rows)
         self.colony = Colony(brain=self.brain, field=self.field, seed=self.seed,
                              settings=settings)
+        jelly_settings = {}
+        jelly_body = message.get('jelly') or {}
+        if 'runSpeed' in jelly_body:
+            jelly_settings['run_speed'] = float(jelly_body['runSpeed'])
+        self.jellies = JellyColony(field=self.field, seed=self.seed, settings=jelly_settings)
         self.session = session
         self.last_field = 0.0
 
@@ -205,8 +214,13 @@ class BrainServer:
             return [protocol.make_error(protocol.TOO_MANY_CREATURES,
                                         f'{len(creatures)} creatures, limit is {self.max_creatures}',
                                         self.session, message.get('tick', 0))]
-        command = self.colony.step(message)
-        command = protocol.make_command(self.session, command['tick'], command['creatures'])
+        # Two colonies share one field: the E. coli colony steps the field's
+        # clock and only looks at E. coli; the jellies step after it.
+        ecoli_only = dict(message)
+        ecoli_only['creatures'] = [c for c in creatures if c.get('species', 'ecoli') == 'ecoli']
+        command = self.colony.step(ecoli_only)
+        orders = command['creatures'] + self.jellies.step(message)
+        command = protocol.make_command(self.session, command['tick'], orders)
         self.observed += 1
 
         field = None
@@ -344,7 +358,7 @@ def main(argv=None):
     p.add_argument('--brain', help='weight JSON written by the learning phase')
     p.add_argument('--cols', type=int, default=64)
     p.add_argument('--rows', type=int, default=64)
-    p.add_argument('--max-creatures', type=int, default=12)
+    p.add_argument('--max-creatures', type=int, default=32)
     p.add_argument('--sessions', help='where to write session logs')
     p.add_argument('--mirror', metavar='HOST:PORT',
                    help='send a copy of observe, command and field to a watcher')

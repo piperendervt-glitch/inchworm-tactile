@@ -19,8 +19,10 @@ EAR_COUNT = 4
 
 TYPES = ('hello', 'welcome', 'observe', 'command', 'field', 'bye', 'error')
 CREATURE_STATES = ('spawned', 'alive', 'dead')
-DEATH_REASONS = ('shot', 'starved', 'despawn')
+DEATH_REASONS = ('shot', 'starved', 'despawn', 'eaten')
 MODES = ('run', 'tumble', 'idle')
+SPECIES = ('ecoli', 'jelly')
+BITES = ('player', 'mech', 'wreck', 'jelly')
 
 VERSION_MISMATCH = 'version_mismatch'
 UNKNOWN_SESSION = 'unknown_session'
@@ -157,6 +159,13 @@ def _validate_observe(data):
             raise ProtocolError(MALFORMED, f'{where}: unknown state {state!r}')
         if state == 'dead' and creature.get('reason') not in (None,) + DEATH_REASONS:
             raise ProtocolError(MALFORMED, f"{where}: unknown reason {creature.get('reason')!r}")
+        if creature.get('species', 'ecoli') not in SPECIES:
+            raise ProtocolError(MALFORMED, f"{where}: unknown species {creature.get('species')!r}")
+        parent = creature.get('parent', -1)
+        if isinstance(parent, bool) or not isinstance(parent, int) or parent < -1:
+            raise ProtocolError(MALFORMED, f'{where}: parent must be an integer id or -1')
+        if 'bite' in creature and creature['bite'] not in BITES:
+            raise ProtocolError(MALFORMED, f"{where}: unknown bite {creature['bite']!r}")
         _vector(creature, 'pos', 3, where)
         _number(creature, 'heading', where)
         if 'ears' in creature:
@@ -233,7 +242,8 @@ def make_command(session, tick, creatures):
              turn=round(float(c.get('turn', 0.0)), 4),
              deposit=round(float(c.get('deposit', 0.0)), 4),
              energy=round(float(c.get('energy', 0.0)), 4),
-             starved=bool(c.get('starved', False)))
+             starved=bool(c.get('starved', False)),
+             divide=bool(c.get('divide', False)))
         for c in creatures]
     return out
 

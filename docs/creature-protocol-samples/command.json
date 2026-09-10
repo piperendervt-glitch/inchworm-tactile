@@ -11,7 +11,8 @@
       "turn": 0.0,
       "deposit": 0.2,
       "energy": 0.61,
-      "starved": false
+      "starved": false,
+      "divide": false
     },
     {
       "id": 4,
@@ -20,7 +21,8 @@
       "turn": -2.4,
       "deposit": 0.0,
       "energy": 1.0,
-      "starved": false
+      "starved": false,
+      "divide": false
     },
     {
       "id": 5,
@@ -29,7 +31,8 @@
       "turn": 0.0,
       "deposit": 0.0,
       "energy": 0.0,
-      "starved": true
+      "starved": true,
+      "divide": false
     }
   ]
 }

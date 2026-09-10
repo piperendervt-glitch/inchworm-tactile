@@ -113,7 +113,24 @@
 - `e = 0` だと中心が止まった一つの渦。`e > 0` で二つの小さな模様が `currentPeriod` 秒周期で入れ替わり、渦の中心が動き回る
 - `e` だけでは、浮かんだものは自分の輪の上を回り続ける（中心から出たものは内側 4 区画に留まる）。`m > 0` の 4 区画の模様が 1.618 倍の周期で出入りし、二つの周期が同じ並びを繰り返さないため、内側と外側の輪の間で入れ替わってアリーナ全体を回遊する（既定 `e = 0.4, m = 0.5` で 900 秒の間に、どの出発点も 16 区画中 13 区画以上を通過。計算で確認）
 
-Body は生物自身の移動を済ませて `speed` を確定した後、流れの分を**別の移動**として加える（壁や障害物では止まる）。流された分は `speed` に含めない（Brain が流された分のエネルギーを請求しないため）。
+**速い帯（lane）**: 渦に重ねて、中心から `laneRadius`（0 中心 〜 1 壁の中点）の輪の上に幅 `laneWidth` の一方向の帯を置く。
+
+- `r = 2 √((u − ½)² + (v − ½)²)`（壁の中点で 1）
+- `ψ_lane = −B tanh((r − laneRadius) / laneWidth)`、`B = laneSpeed × laneWidth × min(W, H) / 2`
+- 帯の中央で速さ `laneSpeed`、渦と同じ向き（負なら逆向き）。帯から幅の数倍離れるとほぼ 0
+- 壁を横切る成分は `sech²((1 − laneRadius) / laneWidth) × laneSpeed`。既定値で 1 万分の 3 で、実用上 0
+
+検算（`laneSpeed` 2、`laneRadius` 0.65、`laneWidth` 0.08、渦なし）:
+
+| 位置 (x, z) | r | 流れ (vx, vz) |
+|---|---|---|
+| (0, −26) | 0.65 | (2, 0) |
+| (26, 0) | 0.65 | (0, 2) |
+| (0, 26) | 0.65 | (−2, 0) |
+| (0, −18.4) | 0.46 | (0.066, 0) |
+| (0, 0) | 0 | (0, 0) |
+
+Body は生物自身の移動を済ませて `speed` を確定した後、流れの分を**別の移動**として加える（壁や障害物では止まる）。流された分は `speed` に含めない（Brain が流された分のエネルギーを請求しないため）。大腸菌もクラゲも同じ流れに流される。
 
 検算（アリーナ `[-40,-40,40,40]`、`currentSpeed` 1、`currentPeriod` 90）:
 
@@ -144,7 +161,9 @@ Body は生物自身の移動を済ませて `speed` を確定した後、流れ
   "v": 1, "type": "hello", "session": "3f2a...", "tick": 0,
   "build": "0.5.0-creature",
   "hz": 30,
-  "body": { "length": 3.0, "radius": 0.8, "cellRadius": 0.4, "cells": 16, "runSpeed": 6.0, "maxHealth": 120 },
+  "body": { "length": 3.0, "radius": 0.8, "cellRadius": 0.4, "cells": 16, "runSpeed": 8.0, "maxHealth": 120 },
+  "jelly": { "runSpeed": 3.0, "maxHealth": 20, "capacity": 16 },
+  "capacity": 32,
   "player": { "maxHealth": 250 },
   "arena": {
     "bounds": [-40, -40, 40, 40],
@@ -156,10 +175,12 @@ Body は生物自身の移動を済ませて `speed` を確定した後、流れ
 }
 ```
 
+- `body` は大腸菌の身体。`runSpeed` は `command.speed = 1.0` が意味する上限で、個体の速度遺伝子はこれを下回る比率で効く。
+- `jelly`（任意）: クラゲの身体。皮膚の幾何（長さ・半径・セル）は大腸菌と同じで、速度と HP だけ違う。`capacity` はクラゲのプール数。トップレベルの `capacity` は両種の合計（個体数の上限。分裂はこれを超えない）。
 - `arena.bounds` は `[minX, minZ, maxX, maxZ]`。スティグマジー場はこの矩形に貼る。
 - `arena.obstacles` は Brain の**再生シミュレータ用**。リアルタイム推論には使わない（生物は目が見えない）。
 - `pilot`（任意）: `{ "kind": "human" | "autopilot", "seed": 7, "sortie": 2, "damageScale": 0.1 }`。`damageScale` は自機が受けるダメージの倍率（1 通常 / 0.1 で約 10 倍タフ / 0 で無敵、切り上げ）。自動出撃のときだけ 1 以外になる。誰が操縦したセッションかをログで区別するため。方策の入力には使わない。
-- `infestation`（任意）: `{ "wreckBites": 10, "mechSeconds": 8, "maxMechs": 2, "wreckOnKill": true, "currentSpeed": 1, "currentPeriod": 90, "currentWobble": 0.4, "currentMix": 0.5 }`。そのセッションのバランス設定。再生シミュレータを本編に合わせるため。`current*` は §5.2 の流れ（`currentSpeed` 0 または欠落で流れなし）。
+- `infestation`（任意）: `{ "wreckBites": 10, "mechSeconds": 8, "maxMechs": 2, "wreckOnKill": true, "currentSpeed": 1, "currentPeriod": 90, "currentWobble": 0.4, "currentMix": 0.5, "laneSpeed": 2, "laneRadius": 0.65, "laneWidth": 0.08, "oneShotKills": true }`。そのセッションのバランス設定。再生シミュレータを本編に合わせるため。`current*` と `lane*` は §5.2 の流れ（`currentSpeed` 0 または欠落で渦なし、`laneSpeed` 0 で帯なし）。
 - 無人の自動出撃（`-auto-sorties`）では、Body は各 tick の `observe` を送った後、その tick の `command` が届くまで待つ（lockstep、既定 250 ms で打ち切り）。ゲーム時間は実時間より速く進むが、Brain 側の処理は変わらない。人が操縦するときは待たない。
 - Brain は `hello` を受けたら当該 session の状態を初期化し `welcome` を返す。
 
@@ -186,7 +207,9 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
   "creatures": [
     {
       "id": 3,
+      "species": "ecoli",
       "state": "alive",
+      "bite": "mech",
       "pos": [5.0, 0.0, 2.0], "heading": 1.57, "speed": 4.1,
       "hp": 95,
       "eating": true,
@@ -213,8 +236,11 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 | `t` | セッション開始からの秒 |
 | `player` | **Brain のログと学習にのみ使う。方策の入力に入れてはならない** |
 | `creatures[].id` | Body が付与する 0 以上の整数。プール再利用時も同じ id を使ってよいが、`state` が `spawned` の tick で Brain は個体状態をリセットする |
+| `species` | `ecoli` / `jelly`。省略時 `ecoli`。Brain は種ごとに別のコロニーで扱う |
 | `state` | `spawned`（この tick で出現）/ `alive` / `dead`（この tick で死亡。次 tick から一覧に含めない） |
-| `reason` | `state == dead` のときのみ。`shot`（被弾）/ `starved`（Brain 指示）/ `despawn`（ミッション終了など） |
+| `parent` | `state == spawned` で、`command.divide` による分裂で生まれた個体にだけ付く親の id。Brain はこれを見て遺伝子を継がせ、親のエネルギーを分ける（§7）。分裂以外の出現には付かない |
+| `reason` | `state == dead` のときのみ。`shot`（被弾）/ `starved`（Brain 指示）/ `eaten`（大腸菌に食べ尽くされたクラゲ）/ `despawn`（ミッション終了など） |
+| `bite` | この tick に噛みついた相手: `player` / `mech` / `wreck` / `jelly`。噛んだ tick にだけ付く。Brain の栄養計算に使う（相手で栄養価が違う）。クラゲは何も噛まないので付かない |
 | `speed` | 実際の水平速度 m/s |
 | `eating` | `k == 2` のセルが 1 つ以上ある間 true。捕食ダメージは Body が与える: 接触 0.5 秒後に最初の一口、以後 1 秒に 1 口、1 口で相手の最大 HP の 1/10（切り上げ）。約 10 口で倒れる |
 | `ears` | 4 要素 0..1（前・右・後・左）。§5.1。省略時 Brain は無音として扱う |
@@ -230,7 +256,8 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
   "creatures": [
     { "id": 3, "mode": "run",    "speed": 1.0, "turn": 0.0,  "deposit": 0.2, "energy": 0.61, "starved": false },
     { "id": 4, "mode": "tumble", "speed": 0.0, "turn": -2.4, "deposit": 0.0, "energy": 0.05, "starved": false },
-    { "id": 5, "mode": "idle",   "speed": 0.0, "turn": 0.0,  "deposit": 0.0, "energy": 0.0,  "starved": true }
+    { "id": 5, "mode": "idle",   "speed": 0.0, "turn": 0.0,  "deposit": 0.0, "energy": 0.0,  "starved": true, "divide": false },
+    { "id": 6, "mode": "run",    "speed": 0.7, "turn": 0.0,  "deposit": 0.0, "energy": 0.9,  "starved": false, "divide": true }
   ]
 }
 ```
@@ -243,6 +270,7 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 | `deposit` | float | 0..1 | スティグマジー書き込み強度。Body は表示にだけ使う（場は Brain 側） |
 | `energy` | float | 0..1 | 表示用。エネルギー残量比 |
 | `starved` | bool | | true なら Body はその個体を `reason: "starved"` で殺す |
+| `divide` | bool | | true なら Body は同じ種の子を隣に出現させる（`observe` に `state: spawned, parent: id` で現れる）。プールが満杯なら何も起きず、Brain は子が現れないことでそれを知る。省略時 false |
 
 - Body は **最後に受け取った `command` を次が来るまで保持**して適用する。tick が既知より古い `command` は捨てる。
 - `command` を **1.0 秒**受け取れなければ Body は全個体を `idle` にし `BRAIN OFFLINE` を表示する。復帰後は Body が `hello` を再送する（session は新規発行）。
@@ -268,9 +296,11 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 | 1 | 通行痕 | 常時 | 140 秒 |
 | 2 | 被弾痕 | セルの `h` が正の tick | 20 秒 |
 | 3 | 死痕 | `state: dead` かつ `reason: shot` の位置に 1 回 | 120 秒 |
+| 4 | プランクトン | 残骸（`prey` の `wreck`）の位置に毎 tick 少しずつ（セル上限あり）。クラゲが食べて減る | 90 秒 |
 
 - デバッグ表示専用。Body はこれを行動判断に使わない。省略可能。
-- 4 チャネルを 0.25 秒ごとに 1 つずつ順番に送るので、各チャネルは 1 秒に 1 回更新される。
+- 5 チャネルを 0.25 秒ごとに 1 つずつ順番に送るので、各チャネルは 1.25 秒に 1 回更新される。
+- チャネル 4 だけは痕跡ではなく餌。大腸菌はこれを食べない（残骸そのものを噛む）。クラゲはこれしか食べない。
 
 チャネルの追加は後方互換なので `v` は上げない。0 と 1 の意味は変わらない。受信側は知らない `channel` を無視してよい。
 
@@ -297,7 +327,11 @@ Body はミッション終了時に送る。Brain はこれを受けたらログ
 | 出現 | Body | `observe` に `state: spawned` |
 | 被弾で HP 0 | Body | `observe` に `state: dead, reason: shot` |
 | 餓死 | Brain | `command` に `starved: true` → Body が次 tick で `dead, reason: starved` |
-| 捕食（プレイヤー・敵機・残骸への被害） | Body | `eating: true` を observe で通知。Brain はこれでエネルギー回復。食べ尽くされた敵機はプレイヤーの撃破数に数えない |
+| 捕食（プレイヤー・敵機・残骸・クラゲへの被害） | Body | 噛んだ tick に `bite` を observe で通知。Brain は相手ごとの栄養価でエネルギー回復（敵機は 2 口で満腹、残骸は 10 口以上）。食べ尽くされた敵機はプレイヤーの撃破数に数えない |
+| クラゲの摂食 | Brain | プランクトン場（チャネル 4）を自分の位置で食べる。Body は関与しない |
+| 分裂 | Brain が判断、Body が実行 | 満腹（遺伝子の閾値以上）が続くと `command.divide`。Body が子を隣に出し `parent` 付きで報告。Brain は子に変異した遺伝子と親のエネルギーの半分を与える |
+| 被弾で即死 | Body | `hello.infestation.oneShotKills` が true なら、自機・敵機どちらの弾でも 1 発で `dead, reason: shot`。プレイヤーの撃破数に入るのは自機の弾だけ |
+| 敵機の狙い | Body | 敵機は自機を狙うが、自機より近い生物、または自機が射程外・視界外のときは 30 m 以内の生物を撃つ |
 | ミッション終了 | Body | `bye` |
 
 ## 8. タイミング

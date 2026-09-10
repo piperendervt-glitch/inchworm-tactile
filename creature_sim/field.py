@@ -18,7 +18,10 @@ FOOD = 0
 PATH = 1
 DAMAGE = 2
 DEATH = 3
-CHANNELS = 4
+# Plankton: what jellies graze. Wrecks shed it, so a soft mound of food grows
+# around each one; it is not a trace anyone leaves on purpose.
+PLANKTON = 4
+CHANNELS = 5
 
 # Half lives in seconds.
 #   food   fades fast, so a stale mark does not hold a colony where the prey
@@ -27,13 +30,14 @@ CHANNELS = 4
 #   damage sits between the two: long enough to learn where the shooting is,
 #          short enough that a place stops being feared once it is quiet
 #   death  is the longest warning of all, and the rarest
-DEFAULT_HALF_LIFE = (11.0, 140.0, 20.0, 120.0)
+#   plankton lingers so a wreck's mound outlasts the jellies grazing it
+DEFAULT_HALF_LIFE = (11.0, 140.0, 20.0, 120.0, 90.0)
 
 # Fraction of the difference to a neighbour exchanged per second. With four
 # neighbours the explicit update is stable while rate * dt * 4 < 1.
 # The two warning traces spread a little so an individual can feel the edge of
 # a dangerous patch before walking into the middle of it.
-DEFAULT_DIFFUSION = (0.35, 0.05, 0.25, 0.15)
+DEFAULT_DIFFUSION = (0.35, 0.05, 0.25, 0.15, 0.35)
 
 
 class StigmergyField:
@@ -143,6 +147,27 @@ class StigmergyField:
         """Bilinear read at (x, z). Outside the bounds the edge value is held."""
         grid = self.cells[channel]
         return sum(grid[index] * weight for index, weight in self._corners(x, z))
+
+    def take(self, x, z, channel, amount):
+        """Remove up to ``amount`` at (x, z), from the nearest cells in proportion.
+
+        Returns what was actually taken, which is less when the cells are
+        nearly empty. Nothing ever goes below zero.
+        """
+        if amount <= 0.0:
+            return 0.0
+        grid = self.cells[channel]
+        corners = self._corners(x, z)
+        available = sum(grid[index] * weight for index, weight in corners)
+        if available <= 0.0:
+            return 0.0
+        fraction = min(1.0, amount / available)
+        taken = 0.0
+        for index, weight in corners:
+            part = grid[index] * weight * fraction
+            grid[index] -= part
+            taken += part
+        return taken
 
     # -- time -----------------------------------------------------------
 

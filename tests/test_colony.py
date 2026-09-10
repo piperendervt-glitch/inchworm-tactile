@@ -86,8 +86,9 @@ class ColonyTests(unittest.TestCase):
         self.assertEqual(entry['mode'], 'idle')
         self.assertEqual(entry['speed'], 0.0)
         self.assertEqual(entry['energy'], 0.0)
-        # basal 0.1 + motion 0.2 per second burns 1.0 energy in about 3.3 s.
-        self.assertAlmostEqual(starved_at * DT, 1.0 / 0.3, delta=0.2)
+        # basal + motion per second (times the metab gene) burns the 1.0 energy.
+        burn = colony.settings['basal_cost'] * colony.creatures[0].genome['metab'] + colony.settings['motion_cost']
+        self.assertAlmostEqual(starved_at * DT, 1.0 / burn, delta=0.2)
 
     def test_eating_restores_energy_and_writes_the_food_trace(self):
         colony = Colony(bounds=BOUNDS, seed=5, settings=dict(initial_energy=10.0))
@@ -112,7 +113,8 @@ class ColonyTests(unittest.TestCase):
         colony.step(observe(200, [creature(state='spawned')]))
         fresh = colony.creatures[0]
         self.assertIsNot(fresh, used)
-        self.assertAlmostEqual(fresh.energy, 100.0, delta=0.02)
+        # One tick of burning at most (basal * metab up to 2 per second).
+        self.assertAlmostEqual(fresh.energy, 100.0, delta=0.1)
         self.assertLessEqual(fresh.decisions, 1)
         self.assertAlmostEqual(fresh.alive_seconds, DT, places=9)
         self.assertFalse(fresh.starved)

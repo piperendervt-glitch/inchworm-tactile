@@ -12,19 +12,29 @@ There is no learning here. Weights are fixed for the whole session.
 import math
 import random
 
+from .. import genome as genes
 from ..field import DAMAGE as DAMAGE_TRACE, DEATH, FOOD, PATH, StigmergyField
+from ..physiology import DEFAULTS as PHYSIOLOGY, Physiology
 from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, EAR_COUNT, EARS,
                     ENERGY, FIELD_PATH_MEAN, INPUTS, PREV_TUMBLE, PREY,
                     PRESSURE, TUMBLE, WALL, EcoliBrain)
 
-# Physiology, carried over from core.World so both models stay comparable.
+# Physiology tuned for quick turnover: a full individual that finds nothing
+# starves in about a minute, and a live mech is a meal in two bites.
 DEFAULTS = dict(
     decision_seconds=0.25,
     initial_energy=100.0,
-    max_energy=100.0,
-    basal_cost=0.1,
-    motion_cost=0.2,
-    food_per_s=12.0,
+    max_energy=PHYSIOLOGY['max_energy'],
+    basal_cost=PHYSIOLOGY['basal_cost'],
+    motion_cost=PHYSIOLOGY['motion_cost'],
+    fed_seconds=PHYSIOLOGY['fed_seconds'],
+    divide_cooldown=PHYSIOLOGY['divide_cooldown'],
+    child_share=PHYSIOLOGY['child_share'],
+    # A trickle while the mouth is on something; the real meal is the bite.
+    food_per_s=3.0,
+    # Energy per bite by what was bitten. A live mech fills a creature in two
+    # bites; a wreck's meat is poor and takes ten or more.
+    bite_energy=dict(mech=55.0, player=30.0, jelly=35.0, wreck=8.0),
     tumble_min=0.25,
     tumble_max=0.8,
     # Body geometry and top speed, overridden by the ``hello`` message.
@@ -49,11 +59,12 @@ KIND_NONE, KIND_WALL, KIND_PREY, KIND_OTHER = 0, 1, 2, 3
 class Creature:
     """State the Brain owns for one individual."""
 
-    def __init__(self, creature_id, brain, settings, rng):
+    def __init__(self, creature_id, brain, settings, rng, genome=None, energy=None):
         self.id = creature_id
         self.rng = rng
         self.state = brain.new_state()
-        self.energy = float(settings['initial_energy'])
+        self.genome = genome if genome is not None else genes.founder('ecoli', rng)
+        self.body = Physiology(settings['initial_energy'] if energy is None else energy)
         self.action = 'run'
         self.prev_tumble = 0.0
         self.turn_left = 0.0
@@ -61,12 +72,28 @@ class Creature:
         self.decision_left = 0.0
         self.deposit = 0.0
         self.tumble_probability = 0.5
-        self.starved = False
         self.decisions = 0
         self.tumbles = 0
-        self.eaten = 0.0
+        self.bites = 0
         self.alive_seconds = 0.0
         self.eating_seconds = 0.0
+
+    # The physiology holds these; kept as properties so callers read as before.
+    @property
+    def energy(self):
+        return self.body.energy
+
+    @energy.setter
+    def energy(self, value):
+        self.body.energy = value
+
+    @property
+    def starved(self):
+        return self.body.starved
+
+    @property
+    def eaten(self):
+        return self.body.eaten
 
 
 class Colony:
@@ -88,6 +115,7 @@ class Colony:
         self.tick = 0
         self.time = 0.0
         self.deaths = 0
+        self.births = 0
 
     # -- geometry -------------------------------------------------------
 
@@ -175,9 +203,18 @@ class Colony:
                 self.creatures.pop(creature_id, None)
                 continue
             if state == 'spawned' or creature_id not in self.creatures:
-                self.creatures[creature_id] = Creature(
-                    creature_id, self.brain, self.settings,
-                    random.Random(f'creature:{self.seed}:{creature_id}:{self.tick}'))
+                rng = random.Random(f'creature:{self.seed}:{creature_id}:{self.tick}')
+                parent = self.creatures.get(observed.get('parent', -1))
+                if parent is not None:
+                    # A division the Body carried out: the child inherits and
+                    # takes its share of the parent's energy.
+                    share = parent.body.split(self.settings)
+                    self.creatures[creature_id] = Creature(
+                        creature_id, self.brain, self.settings, rng,
+                        genome=genes.mutate(parent.genome, rng), energy=share)
+                    self.births += 1
+                else:
+                    self.creatures[creature_id] = Creature(creature_id, self.brain, self.settings, rng)
             seen.add(creature_id)
             out.append(self._step_one(self.creatures[creature_id], observed, dt))
 
@@ -204,7 +241,9 @@ class Colony:
         # Decide only every decision_seconds, and never mid-tumble.
         if creature.turn_left <= 0.0 and creature.decision_left <= 0.0 and not creature.starved:
             outputs, creature.state = self.brain.step(inputs, creature.state)
-            creature.tumble_probability = outputs[TUMBLE]
+            # The tumble gene makes an individual more nervous or more steady
+            # than the shared brain alone would be.
+            creature.tumble_probability = min(1.0, outputs[TUMBLE] * creature.genome['tumble'])
             creature.deposit = outputs[DEPOSIT]
             creature.decisions += 1
             if creature.rng.random() < creature.tumble_probability:
@@ -222,14 +261,17 @@ class Colony:
         else:
             creature.action = 'run'
             creature.decision_left -= dt
-            mode, run_speed, turn = 'run', 1.0, 0.0
+            # The speed gene: what a full run means for this individual.
+            mode, run_speed, turn = 'run', creature.genome['speed'], 0.0
         creature.prev_tumble = 1.0 if mode == 'tumble' else 0.0
 
-        # Energy. Eating restores, moving and simply existing cost.
+        # Energy. A bite is the meal; the mouth on something is a trickle.
+        bite = observed.get('bite')
+        if bite:
+            creature.body.feed(settings['bite_energy'].get(bite, 0.0), settings['max_energy'])
+            creature.bites += 1
         if eating:
-            gain = min(settings['food_per_s'] * dt, settings['max_energy'] - creature.energy)
-            creature.energy += gain
-            creature.eaten += gain
+            creature.body.feed(settings['food_per_s'] * dt, settings['max_energy'])
             creature.eating_seconds += dt
         # Cost the speed the Body actually reached, not the one we asked for,
         # so an individual pinned against a wall does not pay to go nowhere.
@@ -238,10 +280,8 @@ class Colony:
             motion = min(1.0, abs(speed) / settings['run_speed'])
         else:
             motion = 1.0 if mode == 'run' else 0.0
-        creature.energy -= dt * (settings['basal_cost'] + settings['motion_cost'] * motion)
-        if creature.energy <= 0.0:
-            creature.energy = 0.0
-            creature.starved = True
+        divide = creature.body.step(dt, settings, creature.genome['metab'], motion, creature.genome['satiety'])
+        if creature.starved:
             mode, run_speed, turn = 'idle', 0.0, 0.0
 
         # Write to the field. The path trace is always laid down; the food
@@ -256,18 +296,19 @@ class Colony:
         return dict(id=creature.id, mode=mode, speed=run_speed, turn=turn,
                     deposit=creature.deposit,
                     energy=creature.energy / settings['max_energy'],
-                    starved=creature.starved)
+                    starved=creature.starved, divide=divide)
 
     # -- reporting ------------------------------------------------------
 
     def summary(self):
         return dict(tick=self.tick, time_s=self.time, alive=len(self.creatures),
-                    deaths_recorded=self.deaths,
+                    deaths_recorded=self.deaths, births=self.births,
                     species=self.brain.species, generation=self.brain.generation,
                     fingerprint=self.brain.fingerprint,
                     training_enabled=False, training_steps=0,
                     creatures=[dict(id=c.id, energy=c.energy, decisions=c.decisions,
-                                    tumbles=c.tumbles, eaten=c.eaten,
+                                    tumbles=c.tumbles, eaten=c.eaten, bites=c.bites,
                                     alive_s=c.alive_seconds, eating_s=c.eating_seconds,
-                                    starved=c.starved)
+                                    starved=c.starved, divisions=c.body.divisions,
+                                    genome=genes.rounded(c.genome))
                                for c in self.creatures.values()])

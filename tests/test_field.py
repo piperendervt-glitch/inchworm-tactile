@@ -86,10 +86,10 @@ class FieldTests(unittest.TestCase):
         half = field.to_bytes(FOOD, scale=4.0)
         self.assertEqual(half[row * 8 + col], 127)
 
-    def test_four_channels_by_default_with_their_own_half_lives(self):
+    def test_five_channels_by_default_with_their_own_half_lives(self):
         field = StigmergyField(BOUNDS)
         self.assertEqual(field.channels, CHANNELS)
-        self.assertEqual(field.half_life, [11.0, 140.0, 20.0, 120.0])
+        self.assertEqual(field.half_life, [11.0, 140.0, 20.0, 120.0, 90.0])
         for channel in (FOOD, PATH, DAMAGE_TRACE, DEATH):
             self.assertEqual(field.total(channel), 0.0)
 

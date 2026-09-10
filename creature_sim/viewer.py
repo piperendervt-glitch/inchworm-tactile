@@ -37,6 +37,7 @@ ARENA_EDGE = '#4f6b7d'
 OBSTACLE = '#39525f'
 BODY_FILL = '#2f7d6d'
 BODY_DEAD = '#5b4550'
+JELLY_FILL = '#7fb8d8'
 PLAYER = '#ffe196'
 PANEL_BG = '#0a1119'
 TEXT = '#c9dbe6'
@@ -301,12 +302,13 @@ def blend(colour, strength):
 CHANNEL_TINT = ((230, 60, 60),      # food trace
                 (60, 110, 230),     # path trace
                 (235, 145, 45),     # damage trace
-                (165, 80, 220))     # death trace
-CHANNEL_NAME = ('food trace', 'path trace', 'damage trace', 'death trace')
+                (165, 80, 220),     # death trace
+                (70, 205, 110))     # plankton
+CHANNEL_NAME = ('food trace', 'path trace', 'damage trace', 'death trace', 'plankton')
 # What the f key cycles through. Four traces at once turn the floor to mud, so
 # the warnings can be looked at on their own.
-CHANNEL_VIEWS = ((0, 1, 2, 3), (0, 1), (2, 3))
-VIEW_NAME = ('all traces', 'food + path', 'damage + death')
+CHANNEL_VIEWS = ((0, 1, 2, 3, 4), (0, 1), (2, 3), (4,))
+VIEW_NAME = ('all traces', 'food + path', 'damage + death', 'plankton')
 
 
 class FieldImage:
@@ -636,8 +638,10 @@ class ViewerApp:
             r = self.radius * scale
             cx, cy = self.to_screen(x, z)
             entry = self.frame.command_for(creature.get('id')) or {}
-            fill = BODY_DEAD if entry.get('starved') else BODY_FILL
-            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fill, outline='')
+            jelly = creature.get('species') == 'jelly'
+            fill = BODY_DEAD if entry.get('starved') else JELLY_FILL if jelly else BODY_FILL
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill=fill,
+                                    outline='#dff4ff' if jelly else '')
             # Nose, so the heading is readable at a glance.
             nx, nz = x + math.sin(heading) * self.length / 2, z + math.cos(heading) * self.length / 2
             ax, ay = self.to_screen(nx, nz)
