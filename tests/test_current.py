@@ -117,7 +117,8 @@ class RoundTheWholeArenaTests(unittest.TestCase):
         self.assertIsNone(current.from_hello(dict(infestation=dict(currentSpeed=0))))
         got = current.from_hello(dict(infestation=dict(currentSpeed=1.5, currentPeriod=60,
                                                        currentWobble=0.3, currentMix=0.25)))
-        self.assertEqual(got, dict(speed=1.5, period=60.0, wobble=0.3, mix=0.25))
+        self.assertEqual(got, dict(speed=1.5, period=60.0, wobble=0.3, mix=0.25,
+                                   lane=0.0, lane_radius=0.65, lane_width=0.08))
         self.assertAlmostEqual(current.top_speed(got), 1.5 * (1 + 0.6 + 0.5))
 
 

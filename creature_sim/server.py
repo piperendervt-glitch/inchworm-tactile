@@ -22,7 +22,7 @@ from .ecoli.brain import EcoliBrain
 from .ecoli.colony import Colony
 from .field import CHANNELS, FOOD, StigmergyField
 from .jelly.colony import JellyColony
-from . import protocol
+from . import lineage, protocol
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 47123
@@ -112,8 +112,10 @@ class SessionLog:
 class BrainServer:
     def __init__(self, port=DEFAULT_PORT, host='0.0.0.0', seed=0, brain_path=None,
                  cols=64, rows=64, max_creatures=32, sessions_dir=None, quiet=False,
-                 mirror=None):
+                 mirror=None, lineage_path=None):
         self.mirror = parse_endpoint(mirror) if isinstance(mirror, str) else mirror
+        # Where survivors' genes are kept between sessions. None keeps nothing.
+        self.lineage_path = Path(lineage_path) if lineage_path else None
         self.port = port
         self.host = host
         self.seed = seed
@@ -154,6 +156,11 @@ class BrainServer:
             summary = self.colony.summary() if self.colony else {}
             if self.jellies:
                 summary['jellies'] = self.jellies.summary()
+            if self.lineage_path is not None:
+                kept = lineage.save(self.lineage_path, self.colony, self.jellies, session=self.log.directory)
+                summary['lineage'] = dict(path=str(self.lineage_path),
+                                          ecoli=len(kept['ecoli']), jelly=len(kept['jelly']))
+                self.say(f"[lineage] kept {len(kept['ecoli'])} ecoli, {len(kept['jelly'])} jelly -> {self.lineage_path}")
             (self.log.directory / 'summary.json').write_text(
                 json.dumps(dict(reason=reason, ticks=self.log.ticks,
                                 observed=self.observed, dropped=self.dropped,
@@ -182,13 +189,18 @@ class BrainServer:
             if source in body:
                 settings[key] = float(body[source])
         self.field = StigmergyField(bounds, cols=self.cols, rows=self.rows)
+        saved = lineage.load(self.lineage_path) if self.lineage_path else dict(ecoli=[], jelly=[])
         self.colony = Colony(brain=self.brain, field=self.field, seed=self.seed,
-                             settings=settings)
+                             settings=settings, founders=saved['ecoli'])
         jelly_settings = {}
         jelly_body = message.get('jelly') or {}
         if 'runSpeed' in jelly_body:
             jelly_settings['run_speed'] = float(jelly_body['runSpeed'])
-        self.jellies = JellyColony(field=self.field, seed=self.seed, settings=jelly_settings)
+        self.jellies = JellyColony(field=self.field, seed=self.seed, settings=jelly_settings,
+                                   founders=saved['jelly'])
+        if saved['ecoli'] or saved['jelly']:
+            self.say(f"[lineage] founders from {self.lineage_path}: "
+                     f"{len(saved['ecoli'])} ecoli, {len(saved['jelly'])} jelly")
         self.session = session
         self.last_field = 0.0
 
@@ -363,11 +375,15 @@ def main(argv=None):
     p.add_argument('--mirror', metavar='HOST:PORT',
                    help='send a copy of observe, command and field to a watcher')
     p.add_argument('--seconds', type=float, help='stop after this long (for tests)')
+    p.add_argument('--lineage', default=str(ROOT / 'brains' / 'lineage.json'),
+                   help="survivors' genes, carried from one session to the next")
+    p.add_argument('--no-lineage', action='store_true', help='start every session from the norm')
     p.add_argument('--quiet', action='store_true')
     a = p.parse_args(argv)
     server = BrainServer(port=a.port, host=a.host, seed=a.seed, brain_path=a.brain,
                          cols=a.cols, rows=a.rows, max_creatures=a.max_creatures,
-                         sessions_dir=a.sessions, quiet=a.quiet, mirror=a.mirror)
+                         sessions_dir=a.sessions, quiet=a.quiet, mirror=a.mirror,
+                         lineage_path=None if a.no_lineage else a.lineage)
     server.serve(seconds=a.seconds)
     return 0
 

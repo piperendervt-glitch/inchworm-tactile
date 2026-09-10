@@ -234,17 +234,26 @@ def make_welcome(session, brain, cols=64, rows=64, channels=2, max_creatures=12,
     return out
 
 
+# Extra fields a colony may attach for the watcher. The Body ignores them.
+COMMAND_EXTRAS = ('ring', 'rest', 'drift')
+
+
 def make_command(session, tick, creatures):
     out = _envelope('command', session, tick)
-    out['creatures'] = [
-        dict(id=int(c['id']), mode=c['mode'],
-             speed=round(float(c.get('speed', 0.0)), 4),
-             turn=round(float(c.get('turn', 0.0)), 4),
-             deposit=round(float(c.get('deposit', 0.0)), 4),
-             energy=round(float(c.get('energy', 0.0)), 4),
-             starved=bool(c.get('starved', False)),
-             divide=bool(c.get('divide', False)))
-        for c in creatures]
+    entries = []
+    for c in creatures:
+        entry = dict(id=int(c['id']), mode=c['mode'],
+                     speed=round(float(c.get('speed', 0.0)), 4),
+                     turn=round(float(c.get('turn', 0.0)), 4),
+                     deposit=round(float(c.get('deposit', 0.0)), 4),
+                     energy=round(float(c.get('energy', 0.0)), 4),
+                     starved=bool(c.get('starved', False)),
+                     divide=bool(c.get('divide', False)))
+        for key in COMMAND_EXTRAS:
+            if key in c:
+                entry[key] = c[key]
+        entries.append(entry)
+    out['creatures'] = entries
     return out
 
 

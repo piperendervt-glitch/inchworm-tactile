@@ -97,8 +97,12 @@ class Creature:
 
 
 class Colony:
-    def __init__(self, brain=None, field=None, bounds=None, seed=0, settings=None):
+    def __init__(self, brain=None, field=None, bounds=None, seed=0, settings=None, founders=None):
         self.brain = brain if brain is not None else EcoliBrain(seed=seed)
+        # Saved survivors of earlier sessions. A newcomer without a parent
+        # takes one of these genomes (mutated once) instead of the norm.
+        self.founders = [dict(f['genome']) for f in (founders or []) if f.get('genome')]
+        self.founded = 0
         self.settings = dict(DEFAULTS)
         self.settings.update(settings or {})
         for key in ('decision_seconds', 'max_energy', 'food_per_s', 'field_scale'):
@@ -214,7 +218,12 @@ class Colony:
                         genome=genes.mutate(parent.genome, rng), energy=share)
                     self.births += 1
                 else:
-                    self.creatures[creature_id] = Creature(creature_id, self.brain, self.settings, rng)
+                    inherited = None
+                    if self.founders:
+                        inherited = genes.mutate(self.founders[self.founded % len(self.founders)], rng)
+                        self.founded += 1
+                    self.creatures[creature_id] = Creature(creature_id, self.brain, self.settings, rng,
+                                                           genome=inherited)
             seen.add(creature_id)
             out.append(self._step_one(self.creatures[creature_id], observed, dt))
 

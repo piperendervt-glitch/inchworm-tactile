@@ -106,9 +106,12 @@ class Jelly:
 
 
 class JellyColony:
-    def __init__(self, field=None, bounds=None, seed=0, settings=None):
+    def __init__(self, field=None, bounds=None, seed=0, settings=None, founders=None):
         self.settings = dict(DEFAULTS)
         self.settings.update(settings or {})
+        # Saved survivors of earlier sessions: genome and pacemaker cells.
+        self.founders = [f for f in (founders or []) if f.get('genome')]
+        self.founded = 0
         if field is None:
             if bounds is None:
                 raise ValueError('JellyColony needs a field or bounds')
@@ -213,6 +216,13 @@ class JellyColony:
                                     for c, _ in parent.timers]
                     self.jellies[creature_id] = child
                     self.births += 1
+                elif self.founders:
+                    f = self.founders[self.founded % len(self.founders)]
+                    self.founded += 1
+                    newcomer = Jelly(creature_id, s, rng, genome=genes.mutate(f['genome'], rng))
+                    cells = f.get('pacemakers') or [c for c, _ in newcomer.timers]
+                    newcomer.timers = [[int(c) % RING, 1 + rng.randrange(int(newcomer.genome['pace']))] for c in cells]
+                    self.jellies[creature_id] = newcomer
                 else:
                     self.jellies[creature_id] = Jelly(creature_id, s, rng)
             seen.add(creature_id)
@@ -275,8 +285,12 @@ class JellyColony:
         divide = j.body.step(dt, s, j.genome['metab'], motion, j.genome['satiety'])
         if j.starved:
             mode, run, turn = 'idle', 0.0, 0.0
+        # The ring and the drift ride along for the viewer; the Body ignores them.
         return dict(id=j.id, mode=mode, speed=run, turn=turn, deposit=0.0,
-                    energy=j.energy / s['max_energy'], starved=j.starved, divide=divide)
+                    energy=j.energy / s['max_energy'], starved=j.starved, divide=divide,
+                    ring=[round(min(1.0, e), 2) for e in j.E],
+                    rest=[r for r in j.R],
+                    drift=[round(j.vx, 3), round(j.vz, 3)])
 
     def summary(self):
         return dict(tick=self.tick, alive=len(self.jellies), deaths_recorded=self.deaths,

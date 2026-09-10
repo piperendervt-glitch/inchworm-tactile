@@ -646,6 +646,8 @@ class ViewerApp:
             nx, nz = x + math.sin(heading) * self.length / 2, z + math.cos(heading) * self.length / 2
             ax, ay = self.to_screen(nx, nz)
             self.canvas.create_line(cx, cy, ax, ay, fill='#e6f2f7', width=2, arrow='last')
+            if jelly:
+                self.draw_ring(x, z, heading, r, entry)
 
             cr = max(2.0, self.cell_radius * scale)
             for i, cell in enumerate(creature.get('cells') or []):
@@ -658,6 +660,30 @@ class ViewerApp:
                                         fill=colour, outline='')
             self.canvas.create_text(cx, cy - r - 8, text=str(creature.get('id')),
                                     fill=DIM, font=('Consolas', 9))
+
+    def draw_ring(self, x, z, heading, r, entry):
+        """A jelly's nerve ring as the prototype drew it: eight cells round the bell,
+        lit while excited, dim while resting, and the drift it adds up to."""
+        ring = entry.get('ring') or []
+        rest = entry.get('rest') or []
+        if len(ring) == 8:
+            cx, cy = self.to_screen(x, z)
+            rr = r * 1.35
+            for k, e in enumerate(ring):
+                a = heading + k * math.pi / 4.0            # ring cell 0 is straight ahead
+                px, py = cx + math.sin(a) * rr, cy - math.cos(a) * rr
+                if e >= 0.99:
+                    colour = '#fff3a0'
+                elif k < len(rest) and rest[k] > 0:
+                    colour = '#3a5560'
+                else:
+                    colour = blend('#8fd3ff', 0.35 + 0.65 * float(e))
+                self.canvas.create_oval(px - 3, py - 3, px + 3, py + 3, fill=colour, outline='')
+        drift = entry.get('drift')
+        if drift and len(drift) == 2 and (abs(drift[0]) > 1e-3 or abs(drift[1]) > 1e-3):
+            cx, cy = self.to_screen(x, z)
+            ex, ey = self.to_screen(x + float(drift[0]) * 3.0, z + float(drift[1]) * 3.0)
+            self.canvas.create_line(cx, cy, ex, ey, fill='#ffb060', width=2, arrow='last')
 
     def draw_current(self):
         """Arrows for the current the session was played with; longer is faster."""
