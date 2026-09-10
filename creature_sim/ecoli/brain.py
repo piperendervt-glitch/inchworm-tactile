@@ -4,7 +4,7 @@ Weights are generated from a seed and never change during play, exactly like
 ``core.Policy``. The learning phase (a later stage) writes new weight files
 offline; this module only loads and evaluates them.
 
-Input layout, 100 values, matching docs/learning-monster-design.md section 14:
+Input layout, 104 values, matching docs/learning-monster-design.md section 14:
 
     0..15   pressure per tactile cell         (protocol ``cells[i].p``)
     16..31  wall contact per cell             (1.0 where ``k`` == 1)
@@ -16,6 +16,12 @@ Input layout, 100 values, matching docs/learning-monster-design.md section 14:
     97      energy, 0..1
     98      damage taken this tick, 0..1      (max of ``cells[i].h``)
     99      1.0 if the previous action was a tumble
+    100..103 hearing: front, right, back, left  (protocol ``ears``)
+
+Hearing is only an input. No reflex turns a creature toward a sound; whether
+the ears are worth listening to is for learning to find out. Brains saved
+before hearing existed (100 inputs) are widened on load with zero weights on
+the ears, so they behave exactly as they did and record ``migrated_from``.
 
 The three traces that say something about a place are read at every cell, so
 their direction can be felt. The path trace only says how travelled a spot is,
@@ -30,7 +36,8 @@ import hashlib
 import json
 import math
 
-INPUTS = 100
+INPUTS = 104
+LEGACY_INPUTS = 100
 STATE = 8
 OUTPUTS = 2
 CELLS = 16
@@ -46,6 +53,8 @@ FIELD_PATH_MEAN = 96
 ENERGY = 97
 DAMAGE = 98
 PREV_TUMBLE = 99
+EARS = 100
+EAR_COUNT = 4
 
 # The three traces read per cell, in the order they sit in the input vector,
 # paired with the stigmergy channel each one comes from.
@@ -86,6 +95,7 @@ class EcoliBrain:
         self.seed = seed
         self.generation = generation
         self.species = species
+        self.migrated_from = None
         self.fingerprint = hashlib.sha256(
             json.dumps([self.w, self.out], sort_keys=True).encode()).hexdigest()
 
@@ -121,10 +131,13 @@ class EcoliBrain:
     # -- persistence ----------------------------------------------------
 
     def to_dict(self):
-        return dict(schema=1, species=self.species, generation=self.generation,
+        data = dict(schema=1, species=self.species, generation=self.generation,
                     seed=self.seed, inputs=INPUTS, state=STATE, outputs=OUTPUTS,
                     fingerprint=self.fingerprint, training_enabled=False,
                     w=self.w, out=self.out)
+        if self.migrated_from:
+            data['migrated_from'] = self.migrated_from
+        return data
 
     def to_json(self, path=None, indent=1):
         text = json.dumps(self.to_dict(), indent=indent)
@@ -134,8 +147,34 @@ class EcoliBrain:
                 f.write('\n')
         return text
 
+    @staticmethod
+    def _widen_legacy(data):
+        """A 100-input brain from before hearing, with silent ears added.
+
+        The stored fingerprint is checked against the old weights first, so a
+        damaged file is refused rather than quietly migrated.
+        """
+        w, out = data.get('w'), data.get('out')
+        if (not isinstance(w, list) or len(w) != STATE
+                or any(not isinstance(row, list) or len(row) != LEGACY_INPUTS + STATE for row in w)):
+            raise ValueError(f'w must be {STATE}x{LEGACY_INPUTS + STATE} for a {LEGACY_INPUTS}-input brain')
+        stored = data.get('fingerprint')
+        if stored is not None:
+            old = hashlib.sha256(json.dumps([w, out], sort_keys=True).encode()).hexdigest()
+            if old != stored:
+                raise ValueError('fingerprint does not match the stored weights')
+        widened = dict(data)
+        widened['w'] = [list(row[:LEGACY_INPUTS]) + [0.0] * (INPUTS - LEGACY_INPUTS) + list(row[LEGACY_INPUTS:])
+                        for row in w]
+        widened['inputs'] = INPUTS
+        widened.pop('fingerprint', None)
+        return widened, dict(inputs=LEGACY_INPUTS, fingerprint=stored)
+
     @classmethod
     def from_dict(cls, data):
+        migrated = data.get('migrated_from')
+        if data.get('inputs') == LEGACY_INPUTS:
+            data, migrated = cls._widen_legacy(data)
         for key in ('inputs', 'state', 'outputs'):
             expected = dict(inputs=INPUTS, state=STATE, outputs=OUTPUTS)[key]
             if key in data and data[key] != expected:
@@ -146,6 +185,7 @@ class EcoliBrain:
         stored = data.get('fingerprint')
         if stored is not None and stored != brain.fingerprint:
             raise ValueError('fingerprint does not match the stored weights')
+        brain.migrated_from = migrated
         return brain
 
     @classmethod

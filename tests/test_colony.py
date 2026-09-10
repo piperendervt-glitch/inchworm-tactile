@@ -224,7 +224,7 @@ class BrainTests(unittest.TestCase):
     def test_shape_range_and_determinism(self):
         brain = EcoliBrain(seed=2)
         state = brain.new_state()
-        inputs = [0.3] * 100
+        inputs = [0.3] * INPUTS
         first, next_state = brain.step(inputs, state)
 
         self.assertEqual(len(first), 2)
@@ -244,7 +244,7 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(copy.fingerprint, brain.fingerprint)
         self.assertEqual(copy.generation, 4)
         self.assertFalse(brain.to_dict()['training_enabled'])
-        inputs = [0.1 * (i % 7) for i in range(100)]
+        inputs = [0.1 * (i % 7) for i in range(INPUTS)]
         self.assertEqual(copy.step(inputs, copy.new_state()),
                          brain.step(inputs, brain.new_state()))
 

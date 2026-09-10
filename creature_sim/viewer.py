@@ -552,6 +552,7 @@ class ViewerApp:
         self.draw_field()
         self.draw_arena()
         if self.frame is not None:
+            self.draw_prey()
             self.draw_creatures()
             self.draw_player()
         self.draw_panel()
@@ -627,6 +628,23 @@ class ViewerApp:
                                         fill=colour, outline='')
             self.canvas.create_text(cx, cy - r - 8, text=str(creature.get('id')),
                                     fill=DIM, font=('Consolas', 9))
+
+    def draw_prey(self):
+        """Food other than the pilot: a triangle for a mech, a slab for a wreck, with an HP bar."""
+        for item in (self.frame.observe or {}).get('prey') or ():
+            pos = item.get('pos') or [0, 0, 0]
+            cx, cy = self.to_screen(float(pos[0]), float(pos[2]))
+            if item.get('kind') == 'wreck':
+                self.canvas.create_rectangle(cx - 9, cy - 6, cx + 9, cy + 6,
+                                             fill='#5a5048', outline='#b8a898')
+            else:
+                self.canvas.create_polygon(cx, cy - 9, cx - 8, cy + 6, cx + 8, cy + 6,
+                                           fill='#b04ca0', outline='#f0c8e8')
+            max_hp = max(1, int(item.get('maxHp') or 1))
+            share = max(0.0, min(1.0, float(item.get('hp') or 0) / max_hp))
+            self.canvas.create_rectangle(cx - 10, cy + 9, cx + 10, cy + 12, fill='#302828', outline='')
+            self.canvas.create_rectangle(cx - 10, cy + 9, cx - 10 + 20 * share, cy + 12,
+                                         fill='#8fd06a', outline='')
 
     def draw_player(self):
         player = self.frame.player

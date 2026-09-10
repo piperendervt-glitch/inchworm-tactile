@@ -15,6 +15,7 @@ import json
 VERSION = 1
 MAX_DATAGRAM = 60000
 CELLS = 16
+EAR_COUNT = 4
 
 TYPES = ('hello', 'welcome', 'observe', 'command', 'field', 'bye', 'error')
 CREATURE_STATES = ('spawned', 'alive', 'dead')
@@ -136,6 +137,9 @@ def _validate_hello(data):
 
 def _validate_observe(data):
     _number(data, 'dt', 'observe', 1.0 / 30.0)
+    for key in ('sounds', 'prey'):
+        if key in data and not isinstance(data[key], (list, tuple)):
+            raise ProtocolError(MALFORMED, f'observe: {key} must be a list')
     creatures = _require(data, 'creatures', (list, tuple), 'observe')
     seen = set()
     for i, creature in enumerate(creatures):
@@ -155,7 +159,11 @@ def _validate_observe(data):
             raise ProtocolError(MALFORMED, f"{where}: unknown reason {creature.get('reason')!r}")
         _vector(creature, 'pos', 3, where)
         _number(creature, 'heading', where)
-        cells = _require(creature, 'cells', (list, tuple), where)
+        if 'ears' in creature:
+            ears = _vector(creature, 'ears', EAR_COUNT, where)
+            if any(not 0.0 <= v <= 1.0 for v in ears):
+                raise ProtocolError(MALFORMED, f'{where}: ears must be in 0..1')
+        cells =_require(creature, 'cells', (list, tuple), where)
         if len(cells) != CELLS:
             raise ProtocolError(MALFORMED, f'{where}: needs {CELLS} cells, got {len(cells)}')
         for j, cell in enumerate(cells):
@@ -207,10 +215,11 @@ def parse(payload):
 # -- writing ------------------------------------------------------------
 
 def make_welcome(session, brain, cols=64, rows=64, channels=2, max_creatures=12, tick=0):
+    from .ecoli.brain import INPUTS, OUTPUTS
     out = _envelope('welcome', session, tick)
     out['brain'] = dict(species=brain.species, generation=brain.generation,
                         fingerprint=brain.fingerprint,
-                        inputs=68, outputs=2)
+                        inputs=INPUTS, outputs=OUTPUTS)
     out['field'] = dict(cols=int(cols), rows=int(rows), channels=int(channels))
     out['maxCreatures'] = int(max_creatures)
     return out

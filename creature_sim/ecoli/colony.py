@@ -13,9 +13,9 @@ import math
 import random
 
 from ..field import DAMAGE as DAMAGE_TRACE, DEATH, FOOD, PATH, StigmergyField
-from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, ENERGY,
-                    FIELD_PATH_MEAN, INPUTS, PREV_TUMBLE, PREY, PRESSURE,
-                    TUMBLE, WALL, EcoliBrain)
+from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, EAR_COUNT, EARS,
+                    ENERGY, FIELD_PATH_MEAN, INPUTS, PREV_TUMBLE, PREY,
+                    PRESSURE, TUMBLE, WALL, EcoliBrain)
 
 # Physiology, carried over from core.World so both models stay comparable.
 DEFAULTS = dict(
@@ -141,6 +141,11 @@ class Colony:
         inputs[ENERGY] = min(1.0, max(0.0, creature.energy / self.settings['max_energy']))
         inputs[DAMAGE] = min(1.0, max(0.0, hit))
         inputs[PREV_TUMBLE] = creature.prev_tumble
+        # Hearing is passed straight through. A Body that has no ears (an
+        # older build, a test) simply leaves the creature deaf.
+        ears = observed.get('ears') or ()
+        for i in range(min(EAR_COUNT, len(ears))):
+            inputs[EARS + i] = min(1.0, max(0.0, float(ears[i])))
         return inputs, hit
 
     # -- stepping -------------------------------------------------------

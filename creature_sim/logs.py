@@ -85,18 +85,38 @@ class Session:
     def rows(self):
         return read_rows(self.link)
 
-    def player_track(self):
-        """The pilot's path as ``(t, x, z, heading, hp)``, in tick order."""
-        out = []
+    def _tracks(self):
+        """Read the log once for both the pilot's path and the rest of the world."""
+        cached = getattr(self, '_cached_tracks', None)
+        if cached is not None:
+            return cached
+        player_out, world_out = [], []
         for row in self.rows():
-            player = (row.get('observe') or {}).get('player')
+            observe = row.get('observe') or {}
+            player = observe.get('player')
             if not player:
                 continue
+            t = float(row.get('t') or 0.0)
             pos = player.get('pos') or [0.0, 0.0, 0.0]
-            out.append((float(row.get('t') or 0.0), float(pos[0]), float(pos[2]),
-                        float(player.get('heading') or 0.0),
-                        int(player.get('hp') or 0)))
-        return out
+            player_out.append((t, float(pos[0]), float(pos[2]),
+                               float(player.get('heading') or 0.0),
+                               int(player.get('hp') or 0)))
+            has_sounds = 'sounds' in observe
+            world_out.append((t, list(observe.get('prey') or []),
+                              list(observe.get('sounds') or []) if has_sounds else None))
+        self._cached_tracks = (player_out, world_out)
+        return self._cached_tracks
+
+    def player_track(self):
+        """The pilot's path as ``(t, x, z, heading, hp)``, in tick order."""
+        return self._tracks()[0]
+
+    def world_track(self):
+        """Other food and sounds as ``(t, prey, sounds)``, aligned with the pilot's track.
+
+        ``sounds`` is None for a tick recorded before the Body had ears.
+        """
+        return self._tracks()[1]
 
 
 def convert(directory, out_dir=None):

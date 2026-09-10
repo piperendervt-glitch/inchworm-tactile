@@ -14,6 +14,7 @@ responding can be learned here.
 import math
 import random
 
+from . import hearing
 from .ecoli.brain import EcoliBrain
 from .ecoli.colony import Colony
 from .field import StigmergyField
@@ -21,6 +22,11 @@ from .logs import Session
 
 CELLS = 16
 KIND_NONE, KIND_WALL, KIND_PREY, KIND_OTHER = 0, 1, 2, 3
+
+# How far from its centre each kind of food can be touched. Recorded mechs
+# and wrecks are replayed where they were, like the pilot: they are not eaten
+# away, they do not react.
+PREY_RADIUS = dict(player=0.6, mech=1.0, wreck=1.6)
 
 # What a run is worth. Eating is the point; reaching the prey quickly and
 # staying alive are worth something; grinding along a wall is not.
@@ -86,6 +92,11 @@ class ReplayWorld:
         self.tick = 0
         self.time = 0.0
         self.player = (self.track[0][1], self.track[0][2])
+        self.world = self.session.world_track()
+        self._world_cursor = 0
+        self.player_speed = 0.0
+        self.prey = []
+        self.sounds = []
         self.bodies = [self._spawn(i) for i in range(count)]
         self.deaths = 0
 
@@ -148,7 +159,13 @@ class ReplayWorld:
             wall = max(self._wall_depth(cx, cz, r), self._obstacle_depth(cx, cz, r))
             if wall > 0.0:
                 depths[KIND_WALL] = wall
-            prey = r + 0.6 - math.hypot(cx - self.player[0], cz - self.player[1])
+            prey = r + PREY_RADIUS['player'] - math.hypot(cx - self.player[0], cz - self.player[1])
+            for item in self.prey:
+                pos = item.get('pos')
+                if not pos:
+                    continue
+                reach = PREY_RADIUS.get(item.get('kind'), 1.0)
+                prey = max(prey, r + reach - math.hypot(cx - float(pos[0]), cz - float(pos[2])))
             if prey > 0.0:
                 depths[KIND_PREY] = prey
             for other in others:
@@ -184,12 +201,13 @@ class ReplayWorld:
                 id=body.id, state='spawned' if self.tick == 0 else 'alive',
                 pos=[body.x, 0.0, body.z], heading=body.heading, speed=body.speed,
                 hp=120, eating=body.eating,
+                ears=hearing.ears(body.x, body.z, body.heading, self.sounds),
                 cells=[dict(c) for c in body.cells]))
         return dict(v=1, type='observe', session='replay', tick=self.tick,
                     t=self.time, dt=self.dt,
                     player=dict(pos=[self.player[0], 0.0, self.player[1]],
                                 heading=0.0, hp=250, guard=False),
-                    creatures=creatures)
+                    creatures=creatures, sounds=list(self.sounds), prey=list(self.prey))
 
     def advance(self, body):
         dt = self.dt
@@ -228,8 +246,37 @@ class ReplayWorld:
         f = 0.0 if span <= 0 else (seconds - a[0]) / span
         return a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f
 
+    def world_at(self, seconds):
+        """The recorded food and sounds at or just before ``seconds``."""
+        if not self.world:
+            return [], None
+        index = self._world_cursor
+        if index >= len(self.world) or self.world[index][0] > seconds:
+            index = 0
+        while index + 1 < len(self.world) and self.world[index + 1][0] <= seconds:
+            index += 1
+        self._world_cursor = index
+        _, prey, sounds = self.world[index]
+        return prey, sounds
+
+    def update_world(self, seconds):
+        """Move the pilot along the track and bring food and sounds up to date."""
+        before = self.player
+        self.player = self.player_at(seconds)
+        if self.tick > 0:
+            self.player_speed = math.hypot(self.player[0] - before[0],
+                                           self.player[1] - before[1]) / self.dt
+        prey, sounds = self.world_at(seconds)
+        self.prey = prey
+        if sounds is None:
+            # Recorded before the Body had ears: the pilot is the only thing
+            # heard, as loud as its recorded speed makes it.
+            sounds = [dict(kind='player', pos=[self.player[0], 0.0, self.player[1]],
+                           level=hearing.player_level(self.player_speed))]
+        self.sounds = sounds
+
     def step(self):
-        self.player = self.player_at(self.time)
+        self.update_world(self.time)
         alive = [b for b in self.bodies if b.alive]
         for body in alive:
             if self.sense(body, alive):

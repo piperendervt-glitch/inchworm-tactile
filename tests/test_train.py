@@ -14,8 +14,8 @@ class WeightVectorTests(unittest.TestCase):
     def test_flatten_and_unflatten_are_inverses(self):
         brain = EcoliBrain(seed=4)
         values = flatten(brain)
-        # Eight state rows of 108, plus two output rows of 8.
-        self.assertEqual(len(values), 8 * 108 + 2 * 8)
+        # Eight state rows of 112 (104 inputs + 8 state), plus two output rows of 8.
+        self.assertEqual(len(values), 8 * 112 + 2 * 8)
 
         same = unflatten(values, brain)
         self.assertEqual(same.fingerprint, brain.fingerprint)
@@ -56,7 +56,8 @@ class TrainingTests(unittest.TestCase):
         for earlier, later in zip(bests, bests[1:]):
             self.assertGreaterEqual(later, earlier,
                                     f'the best score went down: {bests}')
-        self.assertEqual(trainer.best_score, bests[-1])
+        # The history is rounded to four places; the trainer keeps the full value.
+        self.assertAlmostEqual(trainer.best_score, bests[-1], places=4)
         # The best of the run is carried forward, so it cannot be lost.
         self.assertGreaterEqual(trainer.best_score, bests[0])
 
@@ -67,7 +68,7 @@ class TrainingTests(unittest.TestCase):
 
         data = json.loads(path.read_text(encoding='utf-8'))
         self.assertEqual(data['generation'], 1)
-        self.assertEqual(data['inputs'], 100)
+        self.assertEqual(data['inputs'], 104)
         self.assertFalse(data['training_enabled'],
                          'a saved brain must still say it does not learn in play')
 
