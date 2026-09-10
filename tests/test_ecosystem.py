@@ -41,6 +41,30 @@ class LineageFileTests(unittest.TestCase):
         self.assertEqual(len(again['jelly']), 3, 'no jelly survived, so the old line stays')
         self.assertEqual(lineage.load(self.path)['jelly'], again['jelly'])
 
+    def test_an_extinction_clears_the_file(self):
+        colony = Colony(bounds=BOUNDS, seed=1)
+        colony.step(observe(0, [creature(state='spawned')]))
+        lineage.save(self.path, colony, None)
+        self.assertEqual(len(lineage.load(self.path)['ecoli']), 1)
+        lineage.clear(self.path, session='s')
+        data = lineage.load(self.path)
+        self.assertEqual(data['ecoli'], [])
+        self.assertEqual(data['jelly'], [])
+        self.assertEqual(data['extinct'], 's')
+
+    def test_the_server_drops_the_lineage_on_an_extinct_bye_and_thins_its_log(self):
+        from creature_sim.server import BrainServer
+        server = BrainServer(sessions_dir=self.tmp / 'sessions', quiet=True,
+                             lineage_path=self.path, log_every=10)
+        hello = dict(v=1, type='hello', session='x', tick=0, body={}, arena=dict(bounds=BOUNDS))
+        server.handle(hello)
+        for tick in range(30):
+            server.handle(observe(tick, [creature(state='spawned' if tick == 0 else 'alive')], session='x'))
+        self.assertEqual(server.log.ticks, 3, 'one tick in ten is logged')
+        server.handle(dict(v=1, type='bye', session='x', tick=30, reason='extinct'))
+        self.assertEqual(lineage.load(self.path)['ecoli'], [])
+        self.assertIn('extinct', lineage.load(self.path))
+
     def test_founders_come_from_the_file_and_are_mutated_once(self):
         saved = dict(ecoli=[dict(genome=dict(speed=0.5, metab=1.5, satiety=0.9, tumble=2.0))],
                      jelly=[dict(genome=dict(speed=0.5, metab=1.5, satiety=0.9, pace=60.0, suck=1.5, noci=0.5),

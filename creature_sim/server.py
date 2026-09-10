@@ -112,8 +112,11 @@ class SessionLog:
 class BrainServer:
     def __init__(self, port=DEFAULT_PORT, host='0.0.0.0', seed=0, brain_path=None,
                  cols=64, rows=64, max_creatures=32, sessions_dir=None, quiet=False,
-                 mirror=None, lineage_path=None):
+                 mirror=None, lineage_path=None, log_every=1):
         self.mirror = parse_endpoint(mirror) if isinstance(mirror, str) else mirror
+        # Log one tick in this many. A session that runs for hours would
+        # otherwise fill the disk at about 10 MB a game minute.
+        self.log_every = max(1, int(log_every))
         # Where survivors' genes are kept between sessions. None keeps nothing.
         self.lineage_path = Path(lineage_path) if lineage_path else None
         self.port = port
@@ -156,7 +159,12 @@ class BrainServer:
             summary = self.colony.summary() if self.colony else {}
             if self.jellies:
                 summary['jellies'] = self.jellies.summary()
-            if self.lineage_path is not None:
+            if self.lineage_path is not None and reason == 'extinct':
+                # Everything died: the line ends here, and the next session starts from the norm.
+                lineage.clear(self.lineage_path, session=self.log.directory)
+                summary['lineage'] = dict(path=str(self.lineage_path), ecoli=0, jelly=0, extinct=True)
+                self.say(f'[lineage] extinct: cleared {self.lineage_path}')
+            elif self.lineage_path is not None:
                 kept = lineage.save(self.lineage_path, self.colony, self.jellies, session=self.log.directory)
                 summary['lineage'] = dict(path=str(self.lineage_path),
                                           ecoli=len(kept['ecoli']), jelly=len(kept['jelly']))
@@ -244,7 +252,7 @@ class BrainServer:
             # Round robin, so every channel reaches the watcher in turn.
             self.field_channel = (self.field_channel + 1) % self.field.channels
 
-        if self.log:
+        if self.log and (self.observed % self.log_every == 1 or self.log_every == 1):
             self.log.write(message, command, field)
         return [command] if field is None else [command, field]
 
@@ -378,12 +386,13 @@ def main(argv=None):
     p.add_argument('--lineage', default=str(ROOT / 'brains' / 'lineage.json'),
                    help="survivors' genes, carried from one session to the next")
     p.add_argument('--no-lineage', action='store_true', help='start every session from the norm')
+    p.add_argument('--log-every', type=int, default=1, help='log one tick in N (for sessions that run for hours)')
     p.add_argument('--quiet', action='store_true')
     a = p.parse_args(argv)
     server = BrainServer(port=a.port, host=a.host, seed=a.seed, brain_path=a.brain,
                          cols=a.cols, rows=a.rows, max_creatures=a.max_creatures,
                          sessions_dir=a.sessions, quiet=a.quiet, mirror=a.mirror,
-                         lineage_path=None if a.no_lineage else a.lineage)
+                         lineage_path=None if a.no_lineage else a.lineage, log_every=a.log_every)
     server.serve(seconds=a.seconds)
     return 0
 

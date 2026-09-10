@@ -311,7 +311,7 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 { "v": 1, "type": "bye", "session": "3f2a...", "tick": 9000, "reason": "mission_end" }
 ```
 
-Body はミッション終了時に送る。Brain はこれを受けたらログを閉じる。Brain 終了時にも送る。
+Body はミッション終了時に送る。Brain はこれを受けたらログを閉じる。Brain 終了時にも送る。`reason` が `extinct`（無人出撃で両種が絶滅）のとき、Brain は生き残りの遺伝子を保存せず `lineage.json` を空にする。
 
 ### 6.7 `error`（双方向）
 

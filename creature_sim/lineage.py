@@ -32,6 +32,19 @@ def load(path):
     return data
 
 
+def clear(path, session=None):
+    """Both lines died out: forget them, so the next founders come from the norm."""
+    data = dict(schema=SCHEMA, ecoli=[], jelly=[],
+                saved=datetime.datetime.now().isoformat(timespec='seconds'),
+                extinct=str(session) if session else True)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + '.tmp')
+    temporary.write_text(json.dumps(data, indent=1) + '\n', encoding='utf-8')
+    os.replace(temporary, path)
+    return data
+
+
 def survivors(colony, species, keep=KEEP):
     """The longest-lived individuals alive in a colony, as lineage entries."""
     if species == 'ecoli':
