@@ -16,20 +16,29 @@ import math
 
 FOOD = 0
 PATH = 1
+DAMAGE = 2
+DEATH = 3
+CHANNELS = 4
 
-# Half lives in seconds. The food trace fades fast so a stale mark does not
-# hold a colony in a place the prey has left; the path trace persists so a
-# route stays legible across a whole mission.
-DEFAULT_HALF_LIFE = (11.0, 140.0)
+# Half lives in seconds.
+#   food   fades fast, so a stale mark does not hold a colony where the prey
+#          no longer is
+#   path   persists, so a route stays legible across a whole mission
+#   damage sits between the two: long enough to learn where the shooting is,
+#          short enough that a place stops being feared once it is quiet
+#   death  is the longest warning of all, and the rarest
+DEFAULT_HALF_LIFE = (11.0, 140.0, 20.0, 120.0)
 
 # Fraction of the difference to a neighbour exchanged per second. With four
 # neighbours the explicit update is stable while rate * dt * 4 < 1.
-DEFAULT_DIFFUSION = (0.35, 0.05)
+# The two warning traces spread a little so an individual can feel the edge of
+# a dangerous patch before walking into the middle of it.
+DEFAULT_DIFFUSION = (0.35, 0.05, 0.25, 0.15)
 
 
 class StigmergyField:
-    def __init__(self, bounds, cols=64, rows=64, half_life=DEFAULT_HALF_LIFE,
-                 diffusion=DEFAULT_DIFFUSION, channels=2):
+    def __init__(self, bounds, cols=64, rows=64, half_life=None,
+                 diffusion=None, channels=CHANNELS):
         if len(bounds) != 4 or not all(math.isfinite(v) for v in bounds):
             raise ValueError('bounds must be four finite numbers')
         min_x, min_z, max_x, max_z = bounds
@@ -39,6 +48,12 @@ class StigmergyField:
             raise ValueError('cols and rows must be integers >= 2')
         if channels < 1:
             raise ValueError('channels must be >= 1')
+        # Asking for fewer channels takes the first few defaults, so the older
+        # two-channel callers keep the food and path behaviour they had.
+        if half_life is None:
+            half_life = DEFAULT_HALF_LIFE[:channels]
+        if diffusion is None:
+            diffusion = DEFAULT_DIFFUSION[:channels]
         if len(half_life) != channels or len(diffusion) != channels:
             raise ValueError('half_life and diffusion must have one entry per channel')
         for h in half_life:

@@ -20,12 +20,14 @@ from pathlib import Path
 
 from .ecoli.brain import EcoliBrain
 from .ecoli.colony import Colony
-from .field import FOOD, PATH, StigmergyField
+from .field import CHANNELS, FOOD, StigmergyField
 from . import protocol
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 47123
-FIELD_PERIOD = 0.5
+# One channel goes out at a time, so with four of them each is refreshed
+# once a second without any single tick carrying more than one picture.
+FIELD_PERIOD = 0.25
 # Value that reads as full brightness in the debug overlay.
 FIELD_SCALE = 4.0
 
@@ -213,9 +215,8 @@ class BrainServer:
             self.last_field = now
             field = protocol.make_field(self.session, command['tick'], self.field,
                                         self.field_channel, FIELD_SCALE)
-            # Alternate so both channels reach the overlay without doubling
-            # the traffic on any one tick.
-            self.field_channel = PATH if self.field_channel == FOOD else FOOD
+            # Round robin, so every channel reaches the watcher in turn.
+            self.field_channel = (self.field_channel + 1) % self.field.channels
 
         if self.log:
             self.log.write(message, command, field)

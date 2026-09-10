@@ -100,8 +100,8 @@
 ```json
 {
   "v": 1, "type": "welcome", "session": "3f2a...", "tick": 0,
-  "brain": { "species": "ecoli", "generation": 4, "fingerprint": "a91c...", "inputs": 68, "outputs": 2 },
-  "field": { "cols": 64, "rows": 64, "channels": 2 },
+  "brain": { "species": "ecoli", "generation": 4, "fingerprint": "a91c...", "inputs": 100, "outputs": 2 },
+  "field": { "cols": 64, "rows": 64, "channels": 4 },
   "maxCreatures": 12
 }
 ```
@@ -168,7 +168,7 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 - `command` を **1.0 秒**受け取れなければ Body は全個体を `idle` にし `BRAIN OFFLINE` を表示する。復帰後は Body が `hello` を再送する（session は新規発行）。
 - `observe` に含まれない id が `command` にあれば Body は無視する。
 
-### 6.5 `field`（Brain → Body、約 2 Hz、任意）
+### 6.5 `field`（Brain → Body、0.25 秒ごとに 1 チャネル、任意）
 
 ```json
 {
@@ -180,8 +180,19 @@ Body は `welcome` を受けるまで個体を静止させ、HUD に `BRAIN OFFL
 ```
 
 - 行優先。`data[row * cols + col]` がセル `(col, row)`。`col` は X、`row` は Z 方向。
-- `channel` 0 = 餌痕、1 = 通行痕。1 メッセージに 1 チャネル。
+- `channel` は場の種類。1 メッセージに 1 チャネル。
+
+| channel | 意味 | 書かれる条件 | 半減期 |
+|---|---|---|---|
+| 0 | 餌痕 | プレイヤーに触れている間 | 11 秒 |
+| 1 | 通行痕 | 常時 | 140 秒 |
+| 2 | 被弾痕 | セルの `h` が正の tick | 20 秒 |
+| 3 | 死痕 | `state: dead` かつ `reason: shot` の位置に 1 回 | 120 秒 |
+
 - デバッグ表示専用。Body はこれを行動判断に使わない。省略可能。
+- 4 チャネルを 0.25 秒ごとに 1 つずつ順番に送るので、各チャネルは 1 秒に 1 回更新される。
+
+チャネルの追加は後方互換なので `v` は上げない。0 と 1 の意味は変わらない。受信側は知らない `channel` を無視してよい。
 
 ### 6.6 `bye`（双方向）
 

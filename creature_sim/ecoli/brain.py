@@ -4,16 +4,22 @@ Weights are generated from a seed and never change during play, exactly like
 ``core.Policy``. The learning phase (a later stage) writes new weight files
 offline; this module only loads and evaluates them.
 
-Input layout, 68 values, matching docs/learning-monster-design.md section 3.3:
+Input layout, 100 values, matching docs/learning-monster-design.md section 14:
 
-    0..15   pressure per tactile cell        (protocol ``cells[i].p``)
-    16..31  wall contact per cell            (1.0 where ``k`` == 1)
-    32..47  prey contact per cell            (1.0 where ``k`` == 2)
-    48..63  food trace sampled at each cell  (stigmergy channel 0)
-    64      mean path trace over the cells   (stigmergy channel 1)
-    65      energy, 0..1
-    66      damage taken this tick, 0..1     (max of ``cells[i].h``)
-    67      1.0 if the previous action was a tumble
+    0..15   pressure per tactile cell         (protocol ``cells[i].p``)
+    16..31  wall contact per cell             (1.0 where ``k`` == 1)
+    32..47  prey contact per cell             (1.0 where ``k`` == 2)
+    48..63  food trace sampled at each cell   (stigmergy channel 0)
+    64..79  damage trace sampled at each cell (stigmergy channel 2)
+    80..95  death trace sampled at each cell  (stigmergy channel 3)
+    96      mean path trace over the cells    (stigmergy channel 1)
+    97      energy, 0..1
+    98      damage taken this tick, 0..1      (max of ``cells[i].h``)
+    99      1.0 if the previous action was a tumble
+
+The three traces that say something about a place are read at every cell, so
+their direction can be felt. The path trace only says how travelled a spot is,
+which needs no direction, so it arrives as one number.
 
 Contact with another creature (``k`` == 3) has no channel of its own; it
 reaches the policy through the pressure value alone. Recurrent state is 8
@@ -24,7 +30,7 @@ import hashlib
 import json
 import math
 
-INPUTS = 68
+INPUTS = 100
 STATE = 8
 OUTPUTS = 2
 CELLS = 16
@@ -33,11 +39,17 @@ CELLS = 16
 PRESSURE = 0
 WALL = 16
 PREY = 32
-FIELD_A = 48
-FIELD_B_MEAN = 64
-ENERGY = 65
-DAMAGE = 66
-PREV_TUMBLE = 67
+FIELD_FOOD = 48
+FIELD_DAMAGE = 64
+FIELD_DEATH = 80
+FIELD_PATH_MEAN = 96
+ENERGY = 97
+DAMAGE = 98
+PREV_TUMBLE = 99
+
+# The three traces read per cell, in the order they sit in the input vector,
+# paired with the stigmergy channel each one comes from.
+CELL_TRACES = ((FIELD_FOOD, 0), (FIELD_DAMAGE, 2), (FIELD_DEATH, 3))
 
 TUMBLE = 0
 DEPOSIT = 1

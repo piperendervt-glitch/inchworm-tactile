@@ -1,7 +1,8 @@
 import math
 import unittest
 
-from creature_sim.field import FOOD, PATH, StigmergyField
+from creature_sim.field import CHANNELS, DEATH, FOOD, PATH, StigmergyField
+from creature_sim.field import DAMAGE as DAMAGE_TRACE
 
 BOUNDS = [-40.0, -40.0, 40.0, 40.0]
 
@@ -52,7 +53,7 @@ class FieldTests(unittest.TestCase):
         self.assertAlmostEqual(path[-1] / path[0], 0.5 ** (11.0 / 140.0), places=6)
 
     def test_diffusion_conserves_the_total(self):
-        field = StigmergyField(BOUNDS, cols=16, rows=16, half_life=(None, None))
+        field = StigmergyField(BOUNDS, cols=16, rows=16, channels=2, half_life=(None, None))
         field.deposit(BOUNDS[0] + field.cell_size_x * 4.5,
                       BOUNDS[1] + field.cell_size_z * 4.5, FOOD, 7.0)
         # A corner cell, to exercise the border where a cell has two neighbours.
@@ -71,7 +72,7 @@ class FieldTests(unittest.TestCase):
         self.assertGreater(sum(1 for v in field.cells[FOOD] if v > 1e-9), 2)
 
     def test_to_bytes_is_row_major_and_clamped(self):
-        field = StigmergyField(BOUNDS, cols=8, rows=8, half_life=(None, None))
+        field = StigmergyField(BOUNDS, cols=8, rows=8, channels=2, half_life=(None, None))
         col, row = 5, 2
         x = BOUNDS[0] + field.cell_size_x * (col + 0.5)
         z = BOUNDS[1] + field.cell_size_z * (row + 0.5)
@@ -85,6 +86,31 @@ class FieldTests(unittest.TestCase):
         half = field.to_bytes(FOOD, scale=4.0)
         self.assertEqual(half[row * 8 + col], 127)
 
+    def test_four_channels_by_default_with_their_own_half_lives(self):
+        field = StigmergyField(BOUNDS)
+        self.assertEqual(field.channels, CHANNELS)
+        self.assertEqual(field.half_life, [11.0, 140.0, 20.0, 120.0])
+        for channel in (FOOD, PATH, DAMAGE_TRACE, DEATH):
+            self.assertEqual(field.total(channel), 0.0)
+
+        # Asking for two still gives the food and path behaviour it had.
+        older = StigmergyField(BOUNDS, channels=2)
+        self.assertEqual(older.channels, 2)
+        self.assertEqual(older.half_life, [11.0, 140.0])
+
+    def test_the_warning_traces_outlast_the_food_trace(self):
+        field = StigmergyField(BOUNDS)
+        for channel in (FOOD, DAMAGE_TRACE, DEATH):
+            field.deposit(0.0, 0.0, channel, 100.0)
+        for _ in range(20 * 30):
+            field.update(1 / 30)
+
+        # 20 s is one damage half life, nearly two food ones, and a sixth of
+        # a death one.
+        self.assertAlmostEqual(field.total(DAMAGE_TRACE) / 100, 0.5, places=5)
+        self.assertLess(field.total(FOOD), field.total(DAMAGE_TRACE))
+        self.assertGreater(field.total(DEATH), field.total(DAMAGE_TRACE))
+
     def test_rejects_bad_geometry(self):
         for bounds in ([-1, -1, -1, 1], [0, 0, 1], [0, 0, float('inf'), 1]):
             with self.assertRaises(ValueError):
@@ -92,7 +118,10 @@ class FieldTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             StigmergyField(BOUNDS, cols=1)
         with self.assertRaises(ValueError):
-            StigmergyField(BOUNDS, half_life=(-1.0, 1.0))
+            StigmergyField(BOUNDS, channels=2, half_life=(-1.0, 1.0))
+        with self.assertRaises(ValueError):
+            # One entry per channel, or none at all.
+            StigmergyField(BOUNDS, half_life=(11.0, 140.0))
         with self.assertRaises(ValueError):
             StigmergyField(BOUNDS).update(-1.0)
 

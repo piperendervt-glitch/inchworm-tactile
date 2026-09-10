@@ -12,10 +12,10 @@ There is no learning here. Weights are fixed for the whole session.
 import math
 import random
 
-from ..field import FOOD, PATH, StigmergyField
-from .brain import (CELLS, DAMAGE, DEPOSIT, ENERGY, FIELD_A, FIELD_B_MEAN,
-                    INPUTS, PREV_TUMBLE, PREY, PRESSURE, TUMBLE, WALL,
-                    EcoliBrain)
+from ..field import DAMAGE as DAMAGE_TRACE, DEATH, FOOD, PATH, StigmergyField
+from .brain import (CELL_TRACES, CELLS, DAMAGE, DEPOSIT, ENERGY,
+                    FIELD_PATH_MEAN, INPUTS, PREV_TUMBLE, PREY, PRESSURE,
+                    TUMBLE, WALL, EcoliBrain)
 
 # Physiology, carried over from core.World so both models stay comparable.
 DEFAULTS = dict(
@@ -35,8 +35,10 @@ DEFAULTS = dict(
     # scales the food trace; the path trace is laid down at a fixed rate.
     deposit_food=6.0,
     deposit_path=1.0,
-    # Seconds a hit keeps marking the ground as a place prey was found.
-    hit_memory=2.0,
+    # A hit and a death mark the ground as somewhere dangerous. Death is
+    # written once and heavily; being shot is written for as long as it lasts.
+    deposit_damage=8.0,
+    deposit_death=40.0,
     # Field value that reads as 1.0 at the input layer.
     field_scale=4.0,
 )
@@ -59,7 +61,6 @@ class Creature:
         self.decision_left = 0.0
         self.deposit = 0.0
         self.tumble_probability = 0.5
-        self.hit_left = 0.0
         self.starved = False
         self.decisions = 0
         self.tumbles = 0
@@ -86,6 +87,7 @@ class Colony:
         self.creatures = {}
         self.tick = 0
         self.time = 0.0
+        self.deaths = 0
 
     # -- geometry -------------------------------------------------------
 
@@ -130,9 +132,12 @@ class Colony:
             if h > hit:
                 hit = h
             cx, cz = self.cell_world_xz(x, z, heading, i)
-            inputs[FIELD_A + i] = min(1.0, self.field.sample(cx, cz, FOOD) / scale)
+            # The traces that mark a place are read at every cell, so a
+            # gradient across the skin gives a direction to move in.
+            for offset, channel in CELL_TRACES:
+                inputs[offset + i] = min(1.0, self.field.sample(cx, cz, channel) / scale)
             path_total += min(1.0, self.field.sample(cx, cz, PATH) / scale)
-        inputs[FIELD_B_MEAN] = path_total / CELLS
+        inputs[FIELD_PATH_MEAN] = path_total / CELLS
         inputs[ENERGY] = min(1.0, max(0.0, creature.energy / self.settings['max_energy']))
         inputs[DAMAGE] = min(1.0, max(0.0, hit))
         inputs[PREV_TUMBLE] = creature.prev_tumble
@@ -155,6 +160,13 @@ class Colony:
             creature_id = observed['id']
             state = observed.get('state', 'alive')
             if state == 'dead':
+                # Shot dead is worth remembering. Written once, where it fell,
+                # before the individual is let go.
+                if observed.get('reason') == 'shot':
+                    pos = observed.get('pos') or [0.0, 0.0, 0.0]
+                    self.field.deposit(float(pos[0]), float(pos[2]), DEATH,
+                                       self.settings['deposit_death'])
+                    self.deaths += 1
                 self.creatures.pop(creature_id, None)
                 continue
             if state == 'spawned' or creature_id not in self.creatures:
@@ -182,7 +194,7 @@ class Colony:
 
         inputs, hit = self.build_inputs(creature, observed)
         if hit > 0.0:
-            creature.hit_left = settings['hit_memory']
+            self.field.deposit(x, z, DAMAGE_TRACE, settings['deposit_damage'] * hit)
 
         # Decide only every decision_seconds, and never mid-tumble.
         if creature.turn_left <= 0.0 and creature.decision_left <= 0.0 and not creature.starved:
@@ -228,11 +240,11 @@ class Colony:
             mode, run_speed, turn = 'idle', 0.0, 0.0
 
         # Write to the field. The path trace is always laid down; the food
-        # trace is written where prey is, or was until hit_memory runs out.
-        creature.hit_left = max(0.0, creature.hit_left - dt)
+        # trace only where prey actually is. Being shot has its own channel
+        # now, so a place that hurt is no longer confused with a meal.
         if not creature.starved:
             self.field.deposit(x, z, PATH, settings['deposit_path'] * dt)
-            if eating or creature.hit_left > 0.0:
+            if eating:
                 amount = settings['deposit_food'] * creature.deposit * dt
                 self.field.deposit(x, z, FOOD, amount)
 
@@ -245,6 +257,7 @@ class Colony:
 
     def summary(self):
         return dict(tick=self.tick, time_s=self.time, alive=len(self.creatures),
+                    deaths_recorded=self.deaths,
                     species=self.brain.species, generation=self.brain.generation,
                     fingerprint=self.brain.fingerprint,
                     training_enabled=False, training_steps=0,

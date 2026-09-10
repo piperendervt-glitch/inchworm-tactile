@@ -1,7 +1,11 @@
 import math
 import unittest
 
-from creature_sim.ecoli.brain import CELLS, EcoliBrain
+from creature_sim.ecoli.brain import (CELLS, DAMAGE, FIELD_DAMAGE, FIELD_DEATH,
+                                      FIELD_FOOD, INPUTS, PREY, PRESSURE, WALL,
+                                      EcoliBrain)
+from creature_sim.field import CHANNELS, DEATH
+from creature_sim.field import DAMAGE as DAMAGE_TRACE
 from creature_sim.ecoli.colony import Colony
 
 BOUNDS = [-40.0, -40.0, 40.0, 40.0]
@@ -48,7 +52,7 @@ class FixedBrain:
         return [0.0] * 8
 
     def step(self, inputs, state):
-        assert len(inputs) == 68
+        assert len(inputs) == INPUTS
         self.calls += 1
         return list(self.outputs), list(state)
 
@@ -111,7 +115,6 @@ class ColonyTests(unittest.TestCase):
         self.assertAlmostEqual(fresh.energy, 100.0, delta=0.02)
         self.assertLessEqual(fresh.decisions, 1)
         self.assertAlmostEqual(fresh.alive_seconds, DT, places=9)
-        self.assertEqual(fresh.hit_left, 0.0)
         self.assertFalse(fresh.starved)
 
     def test_dead_and_missing_creatures_are_dropped(self):
@@ -156,20 +159,72 @@ class ColonyTests(unittest.TestCase):
             colony.creatures[0],
             creature(contacts={3: (0.7, 2, 0.0), 11: (0.4, 1, 0.25)}))
 
-        self.assertEqual(len(inputs), 68)
-        self.assertAlmostEqual(inputs[0 + 3], 0.7)      # pressure
-        self.assertAlmostEqual(inputs[32 + 3], 1.0)     # prey
-        self.assertAlmostEqual(inputs[16 + 3], 0.0)     # not a wall
-        self.assertAlmostEqual(inputs[16 + 11], 1.0)    # wall
-        self.assertAlmostEqual(inputs[66], 0.25)        # damage
+        self.assertEqual(len(inputs), INPUTS)
+        self.assertAlmostEqual(inputs[PRESSURE + 3], 0.7)
+        self.assertAlmostEqual(inputs[PREY + 3], 1.0)
+        self.assertAlmostEqual(inputs[WALL + 3], 0.0)
+        self.assertAlmostEqual(inputs[WALL + 11], 1.0)
+        self.assertAlmostEqual(inputs[DAMAGE], 0.25)
         self.assertAlmostEqual(hit, 0.25)
+
+    def test_being_shot_writes_the_damage_trace_not_the_food_trace(self):
+        # The fake body never reports a hit, so this drives one straight in.
+        colony = Colony(bounds=BOUNDS, seed=11)
+        colony.step(observe(0, [creature(state='spawned')]))
+        self.assertEqual(colony.field.total(DAMAGE_TRACE), 0.0)
+
+        colony.step(observe(1, [creature(pos=(5.0, 0.0, -3.0),
+                                         contacts={4: (1.0, 1, 0.5)})]))
+        self.assertGreater(colony.field.total(DAMAGE_TRACE), 0.0,
+                           'a hit should mark the ground it happened on')
+        # Being shot is no longer confused with finding a meal.
+        self.assertEqual(colony.field.total(FIELD_FOOD - FIELD_FOOD), 0.0)
+        self.assertAlmostEqual(colony.field.sample(5.0, -3.0, DAMAGE_TRACE),
+                               colony.field.sample(5.0, -3.0, DAMAGE_TRACE))
+
+    def test_a_shot_death_is_marked_once_where_it_fell(self):
+        colony = Colony(bounds=BOUNDS, seed=12)
+        colony.step(observe(0, [creature(state='spawned')]))
+        self.assertEqual(colony.field.total(DEATH), 0.0)
+
+        dead = creature(state='dead', pos=(-7.0, 0.0, 12.0))
+        dead['reason'] = 'shot'
+        colony.step(observe(1, [dead]))
+        marked = colony.field.total(DEATH)
+        self.assertGreater(marked, 0.0)
+        self.assertEqual(colony.deaths, 1)
+        self.assertNotIn(0, colony.creatures)
+
+        # Starving leaves no death mark; only being shot warns the others.
+        colony.step(observe(2, [creature(1, state='spawned')]))
+        starved = creature(1, state='dead', pos=(3.0, 0.0, 3.0))
+        starved['reason'] = 'starved'
+        colony.step(observe(3, [starved]))
+        self.assertEqual(colony.deaths, 1)
+
+    def test_the_three_place_traces_are_read_at_every_cell(self):
+        colony = Colony(bounds=BOUNDS, seed=13)
+        colony.step(observe(0, [creature(state='spawned')]))
+        scale = colony.settings['field_scale']
+        # Put a strong mark under the right-hand cells and nowhere else.
+        for channel, offset in ((0, FIELD_FOOD), (DAMAGE_TRACE, FIELD_DAMAGE),
+                                (DEATH, FIELD_DEATH)):
+            colony.field.cells[channel] = [0.0] * (colony.field.cols * colony.field.rows)
+            colony.field.deposit(0.8, 0.75, channel, scale * 4)
+
+        inputs, _ = colony.build_inputs(colony.creatures[0], creature())
+        for offset in (FIELD_FOOD, FIELD_DAMAGE, FIELD_DEATH):
+            right = inputs[offset + 2]
+            left = inputs[offset + 6]
+            self.assertGreater(right, left,
+                               f'trace at offset {offset} gives no direction')
 
 
 class BrainTests(unittest.TestCase):
     def test_shape_range_and_determinism(self):
         brain = EcoliBrain(seed=2)
         state = brain.new_state()
-        inputs = [0.3] * 68
+        inputs = [0.3] * 100
         first, next_state = brain.step(inputs, state)
 
         self.assertEqual(len(first), 2)
@@ -189,7 +244,7 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(copy.fingerprint, brain.fingerprint)
         self.assertEqual(copy.generation, 4)
         self.assertFalse(brain.to_dict()['training_enabled'])
-        inputs = [0.1 * (i % 7) for i in range(68)]
+        inputs = [0.1 * (i % 7) for i in range(100)]
         self.assertEqual(copy.step(inputs, copy.new_state()),
                          brain.step(inputs, brain.new_state()))
 
@@ -205,7 +260,7 @@ class BrainTests(unittest.TestCase):
             EcoliBrain.from_dict(tampered)
 
         with self.assertRaises(ValueError):
-            EcoliBrain(seed=1).step([0.0] * 67, [0.0] * 8)
+            EcoliBrain(seed=1).step([0.0] * 99, [0.0] * 8)
 
 
 if __name__ == '__main__':

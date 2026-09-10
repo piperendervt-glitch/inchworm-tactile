@@ -297,8 +297,20 @@ def blend(colour, strength):
     return '#%02x%02x%02x' % tuple(out)
 
 
+# One colour per channel, matching the overlay Unity paints on the floor.
+CHANNEL_TINT = ((230, 60, 60),      # food trace
+                (60, 110, 230),     # path trace
+                (235, 145, 45),     # damage trace
+                (165, 80, 220))     # death trace
+CHANNEL_NAME = ('food trace', 'path trace', 'damage trace', 'death trace')
+# What the f key cycles through. Four traces at once turn the floor to mud, so
+# the warnings can be looked at on their own.
+CHANNEL_VIEWS = ((0, 1, 2, 3), (0, 1), (2, 3))
+VIEW_NAME = ('all traces', 'food + path', 'damage + death')
+
+
 class FieldImage:
-    """The two channels as one picture, written in bulk rather than per cell."""
+    """Every channel as one picture, written in bulk rather than per cell."""
 
     def __init__(self, cols=64, rows=64):
         self.cols = cols
@@ -318,16 +330,15 @@ class FieldImage:
     # hard. Without it a fresh path trace is indistinguishable from the floor.
     RAMP = tuple(int(40 + 215 * (v / 255.0) ** 0.45) if v else 0 for v in range(256))
 
-    def rows_of_colours(self):
-        """Row strings for PhotoImage.put: food in red, path in blue."""
-        food = self.channels.get(0)
-        path = self.channels.get(1)
-        blank = bytes(self.cols * self.rows)
-        food = food if food is not None else blank
-        path = path if path is not None else blank
-        floor_r = int(ARENA_FILL[1:3], 16)
-        floor_g = int(ARENA_FILL[3:5], 16)
-        floor_b = int(ARENA_FILL[5:7], 16)
+    def rows_of_colours(self, view=None):
+        """Row strings for PhotoImage.put, one colour per channel.
+
+        Where several traces mark the same cell the strongest one is shown,
+        so a spot that is both well travelled and dangerous reads as dangerous
+        rather than as a muddy average of the two.
+        """
+        wanted = CHANNEL_VIEWS[0] if view is None else view
+        planes = [(c, self.channels[c]) for c in wanted if c in self.channels]
         ramp = self.RAMP
         out = []
         # Field row 0 is the smallest Z, the far edge, but the first row
@@ -337,13 +348,18 @@ class FieldImage:
             base = row * self.cols
             cells = []
             for col in range(self.cols):
-                r = ramp[food[base + col]]
-                b = ramp[path[base + col]]
-                if r or b:
-                    cells.append('#%02x%02x%02x' % (max(floor_r, r), floor_g,
-                                                    max(floor_b, b)))
-                else:
+                best = 0
+                tint = None
+                for channel, plane in planes:
+                    value = ramp[plane[base + col]]
+                    if value > best:
+                        best, tint = value, CHANNEL_TINT[channel % len(CHANNEL_TINT)]
+                if tint is None:
                     cells.append(ARENA_FILL)
+                else:
+                    cells.append('#%02x%02x%02x' % (tint[0] * best // 255,
+                                                    tint[1] * best // 255,
+                                                    tint[2] * best // 255))
             out.append('{' + ' '.join(cells) + '}')
         return ' '.join(out)
 
@@ -373,6 +389,7 @@ class ViewerApp:
         self.last = time.perf_counter()
         self.seeking = False
         self.frames_seen = 0
+        self.view = 0
 
         self.window = tk.Tk()
         self.window.title(title)
@@ -401,6 +418,8 @@ class ViewerApp:
         self.window.bind('<Left>', self.on_back)
         for key in '1234567890':
             self.window.bind(key, self.on_speed)
+        self.window.bind('f', self.on_view)
+        self.window.bind('F', self.on_view)
         self.window.bind('<Escape>', lambda _e: self.window.destroy())
         self.window.protocol('WM_DELETE_WINDOW', self.window.destroy)
         self.window.after(33, self.update)
@@ -423,6 +442,10 @@ class ViewerApp:
     def on_speed(self, event):
         # 1..9 select that speed, 0 selects the top speed of 20.
         self.speed = 20 if event.char == '0' else int(event.char)
+
+    def on_view(self, _event=None):
+        self.view = (self.view + 1) % len(CHANNEL_VIEWS)
+        self.field_image.dirty = True
 
     def on_scale(self, value):
         # Tk may run this after the call that moved the slider has returned, so
@@ -542,7 +565,7 @@ class ViewerApp:
                     or self.photo.height() != self.field_image.rows):
                 self.photo = self.tk.PhotoImage(width=self.field_image.cols,
                                                 height=self.field_image.rows)
-            self.photo.put(self.field_image.rows_of_colours(), to=(0, 0))
+            self.photo.put(self.field_image.rows_of_colours(CHANNEL_VIEWS[self.view]), to=(0, 0))
             self.field_image.dirty = False
         zx, zy, _w, _h = self.layout()
         left, top = self.to_screen(self.bounds[0], self.bounds[3])
@@ -646,10 +669,18 @@ class ViewerApp:
             y += 15
         y += 6
         c.create_text(x, y, text='field', anchor='w', fill=TEXT, font=('Consolas', 10, 'bold'))
+        c.create_text(x + 60, y, text='f: ' + VIEW_NAME[self.view], anchor='w',
+                      fill='#4c6373', font=('Consolas', 9))
         y += 16
-        for colour, name in (('#c83c3c', 'food trace'), ('#3c6cc8', 'path trace')):
-            c.create_rectangle(x, y - 5, x + 10, y + 5, fill=colour, outline='')
-            c.create_text(x + 18, y, text=name, anchor='w', fill=DIM, font=('Consolas', 9))
+        shown = CHANNEL_VIEWS[self.view]
+        for channel, name in enumerate(CHANNEL_NAME):
+            tint = CHANNEL_TINT[channel]
+            on = channel in shown
+            c.create_rectangle(x, y - 5, x + 10, y + 5,
+                               fill='#%02x%02x%02x' % tint if on else PANEL_BG,
+                               outline='#3a4a57' if not on else '')
+            c.create_text(x + 18, y, text=name, anchor='w',
+                          fill=DIM if on else '#3a4a57', font=('Consolas', 9))
             y += 15
         y += 10
 
@@ -677,8 +708,8 @@ class ViewerApp:
                           font=('Consolas', 8))
             y += 15
 
-        keys = ('space pause  arrows step  1-9,0 speed' if self.replay
-                else 'space hold')
+        keys = ('space pause  arrows step  1-9,0 speed  f traces' if self.replay
+                else 'space hold  f traces')
         c.create_text(x, self.HEIGHT - 18, text=keys, anchor='w', fill='#4c6373',
                       font=('Consolas', 8))
 
